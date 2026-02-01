@@ -50,5 +50,41 @@ class JEDEC_PDF(FPDF):
         self.set_font('Arial', 'B', 8)
         w = [30, 30, 30, 100]
         cols = ["Feature", "Value", "Spec/Limit", "Significance"]
-        for i, col in
+        for i, col in enumerate(cols):
+            self.cell(w[i], 8, col, 1, 0, 'C')
+        self.ln()
+        self.set_font('Arial', '', 7)
+        for _, row in df.iterrows():
+            text = str(row.iloc[3])
+            h = 14 if len(text) > 60 else 8
+            x, y = self.get_x(), self.get_y()
+            self.cell(w[0], h, str(row.iloc[0]), 1)
+            self.cell(w[1], h, str(row.iloc[1]), 1)
+            self.cell(w[2], h, str(row.iloc[2]), 1)
+            self.multi_cell(w[3], h/2 if len(text) > 60 else h, text, 1)
+            self.set_xy(x, y + h)
+        self.ln(3)
+
+def extract_val(text, patterns, default="TBD"):
+    for p in patterns:
+        m = re.search(p, text, re.IGNORECASE)
+        if m: return m.group(1)
+    return default
+
+# --- UI CONTENT ---
+st.title("🔬 DDR4 JEDEC Professional Compliance Auditor")
+
+# Clean, single-line intro
+intro_text = "The DDR4 JEDEC Auditor validates memory device datasheets against JESD79-4B. It audits architecture, power, timing, reliability, and integrity features."
+
+st.markdown("### **Introduction**")
+st.info(intro_text)
+
+p_name = st.text_input("Hardware Project Name", "DDR4-Analysis-Project")
+file = st.file_uploader("Upload Manufacturer PDF Datasheet", type=['pdf'])
+
+if file:
+    try:
+        reader = PdfReader(file)
+        raw_text = "".join(
         
