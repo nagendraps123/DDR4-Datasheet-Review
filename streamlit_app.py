@@ -17,21 +17,18 @@ class JEDEC_PDF(FPDF):
         self.part_number = part_number
 
     def header(self):
-        # Header with Part Number
         self.set_font('Arial', 'B', 16)
         self.cell(0, 10, 'DDR4 JEDEC Professional Compliance Audit', 0, 1, 'C')
         self.set_font('Arial', '', 10)
-        h_left = 'Project: ' + str(self.project_name)
-        h_right = 'Device PN: ' + str(self.part_number)
-        self.cell(0, 7, h_left + ' | ' + h_right, 0, 1, 'C')
+        h_info = f"Project: {self.project_name} | Device PN: {self.part_number}"
+        self.cell(0, 7, h_info, 0, 1, 'C')
         self.ln(5)
 
     def footer(self):
-        # Footer with Part Number and Page Info
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
         d_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        f_text = 'PN: ' + str(self.part_number) + ' | Generated: ' + d_str + ' | Page ' + str(self.page_no())
+        f_text = f"PN: {self.part_number} | Generated: {d_str} | Page {self.page_no()}"
         self.cell(0, 10, f_text, 0, 0, 'C')
 
     def add_intro_box(self, text):
@@ -82,4 +79,15 @@ intro_text = "The DDR4 JEDEC Professional Compliance Auditor validates memory de
 st.markdown("### **Introduction**")
 st.info(intro_text)
 
-p_
+p_name = st.text_input("Hardware Project Name", "DDR4-Analysis-Project")
+file = st.file_uploader("Upload Manufacturer PDF Datasheet", type=['pdf'])
+
+if file:
+    try:
+        reader = PdfReader(file)
+        raw_text = "".join([p.extract_text() for p in reader.pages if p.extract_text()])
+        
+        # Core Variable Definitions to prevent NameError
+        pn = extract_val(raw_text, [r"Part\s*Number[:\s]*(\w+-\w+)", r"(\w{5,}\d\w+)"], "K4A8G165WCR")
+        tck
+        
