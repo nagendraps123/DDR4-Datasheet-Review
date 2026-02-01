@@ -27,22 +27,18 @@ class JEDEC_PDF(FPDF):
         self.set_font('Arial', 'B', 8)
         col_widths = [30, 30, 30, 100]
         headers = list(df.columns)
-        
         for i in range(len(headers)):
             self.cell(col_widths[i], 10, headers[i], 1, 0, 'C')
         self.ln()
-        
         self.set_font('Arial', '', 7)
         for _, row in df.iterrows():
             text_to_wrap = str(row[3])
             line_count = (self.get_string_width(text_to_wrap) / (col_widths[3] - 2)) + 1
             row_height = max(8, int(line_count) * 5) 
-
             x, y = self.get_x(), self.get_y()
             self.cell(col_widths[0], row_height, str(row[0]), 1)
             self.cell(col_widths[1], row_height, str(row[1]), 1)
             self.cell(col_widths[2], row_height, str(row[2]), 1)
-            
             self.multi_cell(col_widths[3], 5, text_to_wrap, 1)
             self.set_xy(x, y + row_height)
 
@@ -52,20 +48,37 @@ def extract_val(text, patterns, default="TBD"):
         if match: return match.group(1)
     return default
 
-# --- MAIN UI ---
+# --- INTRODUCTION SECTION ---
 st.title("🔬 DDR4 JEDEC Professional Compliance Auditor")
-st.markdown("Automated validation of silicon parameters against JESD79-4B standards.")
+st.markdown("""
+### **Introduction**
+The **DDR4 JEDEC Professional Compliance Auditor** is a specialized engineering tool designed to automate the validation of memory device datasheets against the industry-standard **JESD79-4B** specifications.
+
+**Core Capabilities:**
+* **Automated Extraction:** Scans PDF datasheets for critical silicon parameters like $tCK$, $VDD$, and $Pkg Delay$.
+* **Compliance Mapping:** Cross-references values against JEDEC-mandated limits.
+* **Engineering Insights:** Provides actionable directives for BIOS firmware and PCB layout teams.
+""")
+
+with st.expander("📖 View Audit Methodology (How it Works)"):
+    st.info("""
+    The tool audits five key domains:
+    1. **Physical Architecture:** Validates density and internal silicon-to-ball delays.
+    2. **DC Power:** Checks voltage rails ($VDD$, $VPP$) against lattice-safe limits.
+    3. **AC Timing:** Analyzes clock periods and slew rates for Signal Integrity.
+    4. **Thermal Reliability:** Monitors refresh rate scaling requirements ($1X$ vs $2X$).
+    5. **Advanced Integrity:** Checks for reliability features like $CRC$, $DBI$, and $PPR$.
+    """)
+
 st.divider()
 
-uploaded_file = st.file_uploader("Upload Manufacturer PDF Datasheet", type=['pdf'])
+# --- FILE UPLOADER ---
+uploaded_file = st.file_uploader("Upload Manufacturer PDF Datasheet to Start Audit", type=['pdf'])
 
 if uploaded_file:
     try:
         reader = PdfReader(uploaded_file)
-        raw_text = ""
-        for page in reader.pages:
-            content = page.extract_text()
-            if content: raw_text += content
+        raw_text = " ".join([p.extract_text() for p in reader.pages if p.extract_text()])
 
         ds_part = extract_val(raw_text, [r"Part\s*Number[:\s]*(\w+-\w+)", r"(\w{5,}\d\w+)"], "K4A8G165WCR")
         ds_tck = extract_val(raw_text, [r"tCK\s*min\s*=\s*(\d+ps)"], "625 ps")
@@ -97,27 +110,10 @@ if uploaded_file:
                 "Datasheet Value": [ds_tck, "13.75 ns", "350 ns", "5.0 V/ns"],
                 "JEDEC Req": ["625 ps Min", "13.75 ns Max", "350 ns Std", "4.0 V/ns Min"],
                 "Significance": ["Clock jitter margin.", "Read Latency (CL22).", "Refresh busy window.", "Signal sharpness/Data Eye."]
-            })
-        }
-
-        for title, df in sections.items():
-            st.header(title)
-            st.table(df)
-
-        st.divider()
-        if st.button("Generate Final PDF"):
-            pdf = JEDEC_PDF()
-            pdf.add_page()
-            for title, df in sections.items():
-                pdf.chapter_title(title)
-                pdf.create_table(df)
-                pdf.ln(5)
-            pdf_output = pdf.output(dest='S').encode('latin-1')
-            b64 = base64.b64encode(pdf_output).decode('latin-1')
-            st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Audit.pdf">Download PDF</a>', unsafe_allow_html=True)
-
-    except Exception as e:
-        st.error(f"Error: {e}")
-else:
-    st.info("Upload a PDF to begin.")
-            
+            }),
+            "4. Thermal Reliability": pd.DataFrame({
+                "Temp": ["0C to 85C", "85C to 95C", "Over 95C"],
+                "Refresh": ["1X", "2X", "Forbidden"],
+                "Interval": ["7.8 us", "3.9 us", "Shutdown"],
+                "Significance": ["Standard retention window.", "Heat increases leakage.", "
+        
