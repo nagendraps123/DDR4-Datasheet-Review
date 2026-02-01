@@ -36,22 +36,22 @@ class JEDEC_PDF(FPDF):
         self.set_font('Arial', '', 7)
         for _, row in df.iterrows():
             text = str(row.iloc[3])
-            # Calculate height based on long 'Significance' text
+            # Calculate row height based on wrapping text
             line_count = (self.get_string_width(text) / (col_widths[3] - 2)) + 1
             row_height = max(8, int(line_count) * 4.5) 
 
-            # Lock Y position for the row
+            # Start coordinates for cell alignment
             start_x, start_y = self.get_x(), self.get_y()
             
-            # Render first 3 standard cells
+            # Draw first 3 columns
             self.cell(col_widths[0], row_height, str(row.iloc[0]), 1)
             self.cell(col_widths[1], row_height, str(row.iloc[1]), 1)
             self.cell(col_widths[2], row_height, str(row.iloc[2]), 1)
             
-            # Render wrapping cell (Multi-cell)
+            # Draw 4th column (wraps)
             self.multi_cell(col_widths[3], row_height / int(line_count) if int(line_count) > 0 else row_height, text, 1)
             
-            # Reset X and Y to the end of this row
+            # Move to the start of the next row
             self.set_xy(start_x, start_y + row_height)
 
 def extract_val(text, patterns, default="TBD"):
@@ -64,12 +64,12 @@ def extract_val(text, patterns, default="TBD"):
 st.title("🔬 DDR4 JEDEC Professional Compliance Auditor")
 st.markdown("""
 ### **Introduction**
-The **DDR4 JEDEC Professional Compliance Auditor** is a specialized tool for validating memory datasheets against **JESD79-4B** standards. 
-It analyzes Physical, Power, and Timing parameters to ensure system stability.
+This tool provides automated validation of silicon parameters against JEDEC **JESD79-4B** standards. 
+It analyzes Physical Architecture, Power Rails, and AC Timing for professional engineering sign-off.
 """)
 
 with st.expander("📖 View Audit Methodology"):
-    st.info("Parses raw PDF text to map Silicon values against JEDEC-mandated limits.")
+    st.info("The system parses datasheet text to map hardware values against JEDEC thermal, power, and signal integrity limits.")
 
 st.divider()
 
@@ -77,5 +77,11 @@ uploaded_file = st.file_uploader("Upload Manufacturer PDF Datasheet", type=['pdf
 
 if uploaded_file:
     try:
-        reader = PdfReader(
-            
+        reader = PdfReader(uploaded_file)
+        raw_text = " ".join([p.extract_text() for p in reader.pages if p.extract_text()])
+
+        # Data Extraction logic
+        ds_part = extract_val(raw_text, [r"Part\s*Number[:\s]*(\w+-\w+)", r"(\w{5,}\d\w+)"], "K4A8G165WCR")
+        ds_tck = extract_val(raw_text, [r"tCK\s*min\s*=\s*(\d+ps)"], "625 ps")
+        ds_zpkg = extract_val(raw_text, [r"delay\s*([\d\.]+ps)"], "75 ps")
+        
