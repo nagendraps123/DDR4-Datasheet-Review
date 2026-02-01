@@ -8,7 +8,7 @@ import base64
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="DDR4 JEDEC Professional Auditor", layout="wide")
 
-# --- HARDENED PDF ENGINE (Synchronized Table Heights) ---
+# --- RE-ENGINEERED PDF ENGINE (Fixes Row Misalignment) ---
 class JEDEC_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 16)
@@ -27,29 +27,32 @@ class JEDEC_PDF(FPDF):
         self.set_font('Arial', 'B', 8)
         col_widths = [30, 30, 30, 100]
         
-        # Header
+        # Header Row
         for i, col in enumerate(df.columns):
             self.cell(col_widths[i], 10, col, 1, 0, 'C')
         self.ln()
         
-        # Rows with Height Sync
+        # Data Rows with Synchronized Height
         self.set_font('Arial', '', 7)
         for _, row in df.iterrows():
-            # Calculate height needed for the long "Significance" text
             text = str(row.iloc[3])
+            # Calculate height based on long 'Significance' text
             line_count = (self.get_string_width(text) / (col_widths[3] - 2)) + 1
             row_height = max(8, int(line_count) * 4.5) 
 
-            # Standard Cells
-            curr_x, curr_y = self.get_x(), self.get_y()
+            # Lock Y position for the row
+            start_x, start_y = self.get_x(), self.get_y()
+            
+            # Render first 3 standard cells
             self.cell(col_widths[0], row_height, str(row.iloc[0]), 1)
             self.cell(col_widths[1], row_height, str(row.iloc[1]), 1)
             self.cell(col_widths[2], row_height, str(row.iloc[2]), 1)
             
-            # Multi-line Cell for Significance
+            # Render wrapping cell (Multi-cell)
             self.multi_cell(col_widths[3], row_height / int(line_count) if int(line_count) > 0 else row_height, text, 1)
-            self.set_xy(curr_x + sum(col_widths), curr_y + row_height)
-            self.ln(0)
+            
+            # Reset X and Y to the end of this row
+            self.set_xy(start_x, start_y + row_height)
 
 def extract_val(text, patterns, default="TBD"):
     for pattern in patterns:
@@ -57,15 +60,16 @@ def extract_val(text, patterns, default="TBD"):
         if match: return match.group(1)
     return default
 
-# --- UI INTRODUCTION ---
+# --- UI CONTENT ---
 st.title("🔬 DDR4 JEDEC Professional Compliance Auditor")
 st.markdown("""
 ### **Introduction**
-This tool validates memory parameters against **JESD79-4B** standards. It parses datasheets for timing and power rails, mapping them to engineering requirements for BIOS and PCB design.
+The **DDR4 JEDEC Professional Compliance Auditor** is a specialized tool for validating memory datasheets against **JESD79-4B** standards. 
+It analyzes Physical, Power, and Timing parameters to ensure system stability.
 """)
 
 with st.expander("📖 View Audit Methodology"):
-    st.info("Audits: Physical Arch, DC Power, AC Timing, Thermal Reliability, and Advanced Integrity.")
+    st.info("Parses raw PDF text to map Silicon values against JEDEC-mandated limits.")
 
 st.divider()
 
@@ -73,10 +77,5 @@ uploaded_file = st.file_uploader("Upload Manufacturer PDF Datasheet", type=['pdf
 
 if uploaded_file:
     try:
-        reader = PdfReader(uploaded_file)
-        raw_text = " ".join([p.extract_text() for p in reader.pages if p.extract_text()])
-
-        # Extraction logic
-        ds_part = extract_val(raw_text, [r"Part\s*Number[:\s]*(\w+-\w+)", r"(\w{5,}\d\w+)"], "K4A8G165WCR")
-        ds_tck = extract_val(raw_text, [r"tCK\s*min
-        
+        reader = PdfReader(
+            
