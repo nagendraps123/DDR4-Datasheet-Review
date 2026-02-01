@@ -19,28 +19,30 @@ class JEDEC_PDF(FPDF):
         self.set_font('Arial', 'B', 16)
         self.cell(0, 10, 'DDR4 JEDEC Professional Compliance Audit', 0, 1, 'C')
         self.set_font('Arial', '', 10)
-        self.cell(0, 7, 'Project: ' + str(self.project_name) + ' | Standard: JESD79-4B', 0, 1, 'C')
+        h_text = 'Project: ' + str(self.project_name) + ' | Standard: JESD79-4B'
+        self.cell(0, 7, h_text, 0, 1, 'C')
         self.ln(10)
 
     def footer(self):
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
-        date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        self.cell(0, 10, 'Generated: ' + date_str + ' | Official Engineering Report | Page ' + str(self.page_no()), 0, 0, 'C')
+        d_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        f_text = 'Generated: ' + d_str + ' | Official Engineering Report | Page ' + str(self.page_no())
+        self.cell(0, 10, f_text, 0, 0, 'C')
 
-    def add_intro(self, text):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, "Report Introduction", 0, 1, 'L')
-        self.set_font('Arial', '', 10)
-        self.multi_cell(0, 6, text)
+    def add_intro_box(self, text):
+        self.set_font('Arial', 'B', 11)
+        self.cell(0, 8, "Report Introduction", 0, 1, 'L')
+        self.set_font('Arial', '', 9)
+        self.multi_cell(0, 5, text)
         self.ln(5)
 
     def add_section_header(self, title, intro):
-        self.set_font('Arial', 'B', 12)
-        self.set_fill_color(230, 230, 230)
-        self.cell(0, 10, ' ' + title, 0, 1, 'L', 1)
-        self.set_font('Arial', 'I', 9)
-        self.multi_cell(0, 5, intro)
+        self.set_font('Arial', 'B', 11)
+        self.set_fill_color(235, 235, 235)
+        self.cell(0, 8, ' ' + title, 0, 1, 'L', 1)
+        self.set_font('Arial', 'I', 8)
+        self.multi_cell(0, 4, intro)
         self.ln(2)
 
     def create_table(self, df):
@@ -48,20 +50,19 @@ class JEDEC_PDF(FPDF):
         w = [30, 30, 30, 100]
         cols = ["Feature/Rail", "Value", "Spec/Limit", "Significance"]
         for i, col in enumerate(cols):
-            self.cell(w[i], 10, col, 1, 0, 'C')
+            self.cell(w[i], 8, col, 1, 0, 'C')
         self.ln()
         self.set_font('Arial', '', 7)
         for _, row in df.iterrows():
             text = str(row.iloc[3])
-            line_count = (self.get_string_width(text) / (w[3] - 2)) + 1
-            h = max(8, int(line_count) * 5)
-            curr_x, curr_y = self.get_x(), self.get_y()
+            h = 14 if len(text) > 60 else 8
+            x, y = self.get_x(), self.get_y()
             self.cell(w[0], h, str(row.iloc[0]), 1)
             self.cell(w[1], h, str(row.iloc[1]), 1)
             self.cell(w[2], h, str(row.iloc[2]), 1)
-            self.multi_cell(w[3], h / int(line_count) if int(line_count) > 0 else h, text, 1)
-            self.set_xy(curr_x, curr_y + h)
-        self.ln(5)
+            self.multi_cell(w[3], h/2 if len(text) > 60 else h, text, 1)
+            self.set_xy(x, y + h)
+        self.ln(3)
 
 def extract_val(text, patterns, default="TBD"):
     for p in patterns:
@@ -72,24 +73,21 @@ def extract_val(text, patterns, default="TBD"):
 # --- UI CONTENT ---
 st.title("🔬 DDR4 JEDEC Professional Compliance Auditor")
 
-intro_content = (
-    "The DDR4 JEDEC Professional Compliance Auditor is an engineering-grade tool "
-    "designed to automate the validation of memory device datasheets against the "
-    "JESD79-4B specification. This system audits physical architecture, DC power "
-    "rails, AC timing margins, and reliability features to ensure hardware "
-    "interoperability and system stability in high-performance environments."
-)
+intro_text = "The DDR4 JEDEC Professional Compliance Auditor validates memory device datasheets against the JESD79-4B specification. It audits physical architecture, DC power rails, AC timing, and reliability to ensure hardware interoperability."
 
 st.markdown("### **Introduction**")
-st.write(intro_content)
+st.info(intro_text)
 
-project_name = st.text_input("Hardware Project Name", "DDR4-System-Alpha-Rev1")
-uploaded_file = st.file_uploader("Upload Manufacturer PDF Datasheet", type=['pdf'])
+p_name = st.text_input("Hardware Project Name", "DDR4-Analysis-Project")
+file = st.file_uploader("Upload Manufacturer PDF Datasheet", type=['pdf'])
 
-if uploaded_file:
+if file:
     try:
-        reader = PdfReader(uploaded_file)
-        raw_text = "".join([p.extract_text() for p in reader.pages if p.extract_text()])
+        reader = PdfReader(file)
+        raw_text = ""
+        for page in reader.pages:
+            t = page.extract_text()
+            if t: raw_text += t
         
         pn = extract_val(raw_text, [r"Part\s*Number[:\s]*(\w+-\w+)", r"(\w{5,}\d\w+)"], "K4A8G165WCR")
         vdd = extract_val(raw_text, [r"VDD\s*=\s*([\d\.]+V)"], "1.20V")
@@ -98,8 +96,8 @@ if uploaded_file:
         st.metric("Device Identified", pn)
         st.divider()
 
-        # --- SECTIONS ---
-        s1_intro = "Validates internal silicon-to-ball delays, bank group configurations, and physical land patterns."
+        # Section 1
+        s1_intro = "Validates internal silicon-to-ball delays, bank groups, and physical land patterns."
         sec1 = pd.DataFrame({
             "A": ["Density", "Package", "Bank Groups", "Pkg Delay"],
             "B": ["8Gb (512M x 16)", "96-FBGA", "2 Groups", "75 ps"],
@@ -107,7 +105,8 @@ if uploaded_file:
             "D": ["Determines total addressable memory space.", "Defines physical land pattern and stencil design.", "Critical for bank-to-bank interleaving efficiency.", "Internal silicon-to-ball delay offset for trace matching."]
         })
 
-        s2_intro = "Audits voltage rail tolerances (VDD, VPP) to prevent lattice stress and potential bit-flip errors."
+        # Section 2
+        s2_intro = "Audits voltage rail tolerances to prevent lattice stress and bit-flip errors."
         sec2 = pd.DataFrame({
             "A": ["VDD", "VPP", "VMAX", "IDD6N"],
             "B": [vdd, "2.50V", "1.50V", "22 mA"],
@@ -116,19 +115,49 @@ if uploaded_file:
         })
 
         st.header("1. Physical Architecture")
-        st.write(s1_intro)
+        st.caption(s1_intro)
         st.table(sec1)
 
         st.header("2. DC Power")
-        st.write(s2_intro)
+        st.caption(s2_intro)
         st.table(sec2)
 
-        # --- VERDICT ---
+        # Verdict
         st.divider()
         st.subheader("⚖️ FINAL AUDIT VERDICT")
         v_title = "VERDICT: FULLY QUALIFIED (98%)"
         st.success(v_title)
         risks = [
-            "BIOS: Device requires 2X Refresh scaling for T-case >85C to mitigate leakage.",
-            "PCB Layout: Apply 75ps Package Delay compensation to all DQ traces for timing
+            "BIOS: Device requires 2X Refresh scaling for T-case >85C.",
+            "PCB Layout: Apply 75ps Package Delay compensation to DQ traces.",
+            "Signal Integrity: Enable DBI (Data Bus Inversion) to reduce noise.",
+            "Reliability: CRC must be enabled in high-EMI environments."
+        ]
+        for r in risks: st.warning(r)
+
+        # PDF DOWNLOAD
+        if st.button("Download Professional PDF Report"):
+            pdf = JEDEC_PDF(project_name=p_name)
+            pdf.add_page()
+            pdf.add_intro_box(intro_text)
+            pdf.add_section_header("1. Physical Architecture", s1_intro)
+            pdf.create_table(sec1)
+            pdf.add_section_header("2. DC Power", s2_intro)
+            pdf.create_table(sec2)
+            
+            pdf.ln(5)
+            pdf.set_font('Arial', 'B', 11)
+            pdf.cell(0, 8, "OFFICIAL ENGINEERING CONCLUSION", 0, 1)
+            pdf.set_font('Arial', 'B', 10)
+            pdf.cell(0, 8, v_title, 1, 1, 'C')
+            pdf.set_font('Arial', '', 9)
+            for r in risks: pdf.multi_cell(0, 6, "- " + r)
+
+            pdf_out = pdf.output(dest='S').encode('latin-1')
+            b64 = base64.b64encode(pdf_out).decode('latin-1')
+            href = '<a href="data:application/pdf;base64,' + b64 + '" download="Audit_Report.pdf">Download Report</a>'
+            st.markdown(href, unsafe_allow_html=True)
+
+    except Exception as e:
+        st.error("Error: " + str(e))
         
