@@ -8,7 +8,7 @@ import base64
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="DDR4 JEDEC Professional Auditor", layout="wide")
 
-# --- PROFESSIONAL PDF ENGINE ---
+# --- PROFESSIONAL PDF ENGINE (Synchronized Height + Rich Content) ---
 class JEDEC_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 16)
@@ -33,7 +33,7 @@ class JEDEC_PDF(FPDF):
         self.set_font('Arial', '', 7)
         for _, row in df.iterrows():
             text = str(row.iloc[3])
-            # Sync row height based on detailed notes column
+            # Synchronize row height based on detailed 'Significance' column
             line_count = (self.get_string_width(text) / (col_widths[3] - 2)) + 1
             row_height = max(8, int(line_count) * 4.5) 
 
@@ -50,14 +50,8 @@ def extract_val(text, patterns, default="TBD"):
         if match: return match.group(1)
     return default
 
-# --- RESTORED DETAILED INTRODUCTION ---
+# --- UI: DETAILED INTRODUCTION ---
 st.title("🔬 DDR4 JEDEC Professional Compliance Auditor")
 st.markdown("""
 ### **Introduction**
-The **DDR4 JEDEC Professional Compliance Auditor** is a specialized engineering tool designed to automate the validation of memory device datasheets against the industry-standard **JESD79-4B** specifications.
-
-**Core Capabilities:**
-* **Automated Extraction:** Scans PDF datasheets for critical silicon parameters ($tCK$, $VDD$, $Pkg Delay$).
-* **Compliance Mapping:** Cross-references values against JEDEC-mandated limits.
-*
-            
+The **DDR4 J
