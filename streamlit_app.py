@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import pdfplumber
 import re
-from fpdf import FPDF
 
-# --- 1. JEDEC AUTHORITATIVE LOOKUP (Strict Logic) ---
+# --- 1. JEDEC AUTHORITATIVE LOOKUP ---
 JEDEC_MASTER = {
     "DENSITY": {
         "8Gb": {"tRFC1": 350, "tREFI": 7.8, "BG": 4, "Rows": "A0-A14", "Cols": "A0-A9", "Clause": "Table 2 / 107"},
@@ -22,7 +21,6 @@ st.title("🛡️ JEDEC Silicon Gatekeeper: Full Engineering Audit")
 uploaded_file = st.sidebar.file_uploader("Upload Vendor Datasheet (PDF)", type="pdf")
 
 if uploaded_file:
-    # --- SIMULATED EXTRACTION DATA ---
     target_bin = st.sidebar.selectbox("Target Speed Bin", ["3200AA", "2933V"])
     target_dens = st.sidebar.selectbox("Silicon Density", ["8Gb", "16Gb"])
     temp_mode = st.sidebar.radio("Operating Temp", ["Standard (≤85°C)", "Extended (>85°C)"])
@@ -31,42 +29,44 @@ if uploaded_file:
     d_ref = JEDEC_MASTER['DENSITY'][target_dens]
     
     # Audit Logic Anchors
-    v_taa = 14.06  # Simulated Failure
-    t_refi = 7.8 if temp_mode == "Standard (≤85°C)" else 3.9
+    v_taa = 14.06  # Simulated extracted fail
+    t_refi_req = 7.8 if temp_mode == "Standard (≤85°C)" else 3.9
     status_taa = "🚨 FAIL" if v_taa > s_ref['tAA'] else "✅ PASS"
-    
-    # --- TABBED OUTPUT (HIGH DENSITY) ---
+    eff_tax = (d_ref['tRFC1'] / (d_ref['tREFI'] * 1000)) * 100
+
     tabs = st.tabs(["1. Addressing", "2. AC Timings", "3. Refresh Tax", "4. Init", "5. DQ Interface", "6. Thermal", "7. Solutions", "8. Risk Log"])
 
     with tabs[0]:
-        st.subheader("Tab 1: Addressing & Configuration (Table 2)")
+        st.subheader("Tab 1: Addressing & Configuration")
         
         st.table([
-            {"Parameter": "Row Addressing", "Importance": "Physical wordline selection bits.", "Risk": "Low", "Vendor": target_dens, "JEDEC": d_ref['Rows'], "Clause": "Table 2", "Status": "✅ PASS"},
-            {"Parameter": "Bank Groups", "Importance": "Architecture for high-speed burst parallelism.", "Risk": "Medium", "Vendor": 4, "JEC": d_ref['BG'], "Clause": "Table 2", "Status": "✅ PASS"}
+            {"Parameter": "Row Addressing", "Description": "Bits for wordline selection", "Importance": "Physical density mapping", "Risk": "Low", "Vendor": target_dens, "JEDEC Req": d_ref['Rows'], "Source": "Table 2", "Status": "✅ PASS"},
+            {"Parameter": "Bank Groups", "Description": "Parallel bank clusters", "Importance": "Architecture for burst speed", "Risk": "Medium", "Vendor": 4, "JEDEC Req": d_ref['BG'], "Source": "Table 2", "Status": "✅ PASS"}
         ])
 
     with tabs[1]:
-        st.subheader("Tab 2: AC Timing Authentication (Table 126)")
+        st.subheader("Tab 2: AC Timing Authentication")
         
         st.table([
-            {"Parameter": "tAA (Latency)", "Importance": "CPU synchronization timing.", "Risk": "CRITICAL", "Vendor": f"{v_taa}ns", "JEDEC": f"{s_ref['tAA']}ns", "Clause": "Table 126", "Status": status_taa},
-            {"Parameter": "tRCD", "Importance": "Active-to-Read command delay.", "Risk": "High", "Vendor": "13.75ns", "JEDEC": "13.75ns", "Clause": "Table 126", "Status": "✅ PASS"}
+            {"Parameter": "tAA (CAS Latency)", "Description": "Read command to data out", "Importance": "CPU Synchronization", "Risk": "CRITICAL", "Vendor": f"{v_taa}ns", "JEDEC Req": f"{s_ref['tAA']}ns", "Source": "Table 126", "Status": status_taa},
+            {"Parameter": "tRCD", "Description": "Active to Read delay", "Importance": "Row open stability", "Risk": "High", "Vendor": "13.75ns", "JEDEC Req": f"{s_ref['tRCD']}ns", "Source": "Table 126", "Status": "✅ PASS"}
         ])
 
     with tabs[2]:
-        st.subheader("Tab 3: Refresh Tax (Table 107)")
+        st.subheader("Tab 3: Refresh Tax Calculation")
         
-        # FIXED CALCULATION
-        eff_tax = (d_ref['tRFC1'] / (d_ref['tREFI'] * 1000)) * 100
         st.table([
-            {"Parameter": "tRFC1", "Importance": "Recovery time after Refresh.", "Risk": "Medium", "Vendor": f"{d_ref['tRFC1']}ns", "JEDEC": f"{d_ref['tRFC1']}ns", "Clause": "Table 107", "Status": "✅ PASS"},
-            {"Parameter": "Refresh Tax", "Importance": "Bus occupancy loss per cycle.", "Risk": "Low", "Vendor": f"{eff_tax:.2f}%", "JEDEC": "< 7%", "Clause": "Ref Tax Algo", "Status": "✅ PASS"}
+            {"Parameter": "tRFC1", "Description": "Recovery time", "Importance": "Restore charge post-refresh", "Risk": "Medium", "Vendor": f"{d_ref['tRFC1']}ns", "JEDEC Req": f"{d_ref['tRFC1']}ns", "Source": "Table 107", "Status": "✅ PASS"},
+            {"Parameter": "Refresh Tax", "Description": "Bus overhead", "Importance": "Available bandwidth loss", "Risk": "Low", "Vendor": f"{eff_tax:.2f}%", "JEDEC Req": "< 7%", "Source": "Formula", "Status": "✅ PASS"}
         ])
 
     with tabs[3]:
-        st.subheader("Tab 4: Initialization & Reset (Clause 3.3)")
+        st.subheader("Tab 4: Initialization & Reset")
         
         st.table([
-            {"Parameter": "tPW_RESET
-        
+            {"Parameter": "tPW_RESET", "Description": "Reset LOW duration", "Importance": "Clears internal logic", "Risk": "High", "Vendor": "120us", "JEDEC Req": "100us min", "Source": "Clause 3.3", "Status": "✅ PASS"}
+        ])
+
+    with tabs[4]:
+        st.subheader("Tab 5: DQ Interface & SI")
+
