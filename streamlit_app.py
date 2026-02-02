@@ -30,8 +30,8 @@ def extract_pn(file):
     return pn_match.group(1) if pn_match else "NOT_FOUND"
 
 # --- 3. Streamlit Landing Page ---
-st.set_page_config(page_title="JEDEC DDR4 Gatekeeper", layout="wide")
-st.title("🛡️ JEDEC DDR4 Gatekeeper (Full Audit Mode)")
+st.set_page_config(page_title="JEDEC DDR4 Compliance & Review Tool", layout="wide")
+st.title("🛡️ JEDEC DDR4 Compliance & Review Tool")
 
 # --- 3a. Disclaimer ---
 with st.expander("📘 About This Tool / Disclaimer", expanded=True):
