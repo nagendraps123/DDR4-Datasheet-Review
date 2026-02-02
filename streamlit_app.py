@@ -17,7 +17,7 @@ AUDIT_DATA = {
         })
     },
     "DC Power": {
-        "about": "Analyzes voltage rail tolerances (VDD, VPP) and maximum stress limits. Stability here is critical to prevent bit-flips during high-speed switching.",
+        "about": "Analyzes voltage rail tolerances (VDD, VPP) and maximum stress limits. Stability here is critical to prevent bit-flips.",
         "df": pd.DataFrame({
             "Feature": ["VDD", "VPP", "VMAX", "IDD6N"],
             "Value": ["1.20V", "2.50V", "1.50V", "22 mA"],
@@ -26,7 +26,7 @@ AUDIT_DATA = {
         })
     },
     "AC Timing": {
-        "about": "Verifies speed-bin compliance (e.g., 3200 MT/s). This section audits the clock period (tCK) and CAS latency (tAA) to ensure the controller timing matches the DRAM capability.",
+        "about": "Verifies speed-bin compliance. Audits clock period (tCK) and CAS latency (tAA) to ensure controller timing matches DRAM capability.",
         "df": pd.DataFrame({
             "Feature": ["tCK", "tAA", "tRFC", "Slew Rate"],
             "Value": ["625 ps", "13.75 ns", "350 ns", "5.0 V/ns"],
@@ -35,7 +35,7 @@ AUDIT_DATA = {
         })
     },
     "Thermal": {
-        "about": "Focuses on data retention reliability. As temperature increases, cell leakage increases, requiring faster refresh cycles ($tREFI$) to maintain data integrity.",
+        "about": "Focuses on data retention reliability. Faster refresh cycles (tREFI) are required at high temperatures to maintain data integrity.",
         "df": pd.DataFrame({
             "Feature": ["T-Case Max", "Normal Ref", "Extended Ref", "tREFI (85C)"],
             "Value": ["95C", "1X (0-85C)", "2X (85-95C)", "3.9 us"],
@@ -44,7 +44,7 @@ AUDIT_DATA = {
         })
     },
     "Integrity": {
-        "about": "Audits advanced reliability features. These allow the system to detect bus errors (CRC) or hide electrical noise (DBI) during high-density data transfers.",
+        "about": "Audits advanced reliability features like CRC and DBI to detect bus errors or hide electrical noise.",
         "df": pd.DataFrame({
             "Feature": ["CRC", "DBI", "Parity", "PPR"],
             "Value": ["Yes", "Yes", "Yes", "Yes"],
@@ -57,8 +57,8 @@ AUDIT_DATA = {
 VERDICT = "FULLY QUALIFIED (98%)"
 SOLUTIONS = {
     "Thermal Risk": "Implement BIOS-level 'Fine Granularity Refresh' to scale tREFI to 3.9us automatically when T-Case exceeds 85°C.",
-    "Skew Risk": "Apply 75ps Package Delay compensation values into the PCB layout constraints for all DQ/DQS traces.",
-    "Signal Risk": "Enable Data Bus Inversion (DBI) and Write CRC in the Memory Controller to mitigate VDDQ switching noise."
+    "Skew Risk": "Apply 75ps Package Delay compensation values into the PCB layout constraints.",
+    "Signal Risk": "Enable Data Bus Inversion (DBI) and Write CRC in the Memory Controller to mitigate noise."
 }
 
 # --- 2. FIXED PDF ENGINE ---
@@ -75,6 +75,7 @@ class JEDEC_PDF(FPDF):
         self.ln(5)
 
     def add_sec(self, title, about, df):
+        if self.get_y() > 250: self.add_page() # Page break check
         self.set_font('Arial', 'B', 11); self.set_fill_color(240, 240, 240)
         self.cell(0, 8, f" {title}", 0, 1, 'L', 1)
         self.set_font('Arial', 'I', 8); self.multi_cell(0, 4, about); self.ln(2)
@@ -83,8 +84,10 @@ class JEDEC_PDF(FPDF):
         for i, c in enumerate(["Feature", "Value", "Spec", "Significance"]): self.cell(w[i], 8, c, 1, 0, 'C')
         self.ln(); self.set_font('Arial', '', 7)
         for _, row in df.iterrows():
-            h = 10; self.cell(w[0], h, str(row.iloc[0]), 1); self.cell(w[1], h, str(row.iloc[1]), 1)
-            self.cell(w[2], h, str(row.iloc[2]), 1); self.multi_cell(w[3], h, str(row.iloc[3]), 1)
+            self.cell(w[0], 10, str(row.iloc[0]), 1)
+            self.cell(w[1], 10, str(row.iloc[1]), 1)
+            self.cell(w[2], 10, str(row.iloc[2]), 1)
+            self.multi_cell(w[3], 10, str(row.iloc[3]), 1)
         self.ln(4)
 
 # --- 3. UI WITH HORIZONTAL TABS ---
@@ -108,28 +111,17 @@ if uploaded_file:
                 st.info(AUDIT_DATA[key]["about"])
                 if key == "Thermal":
                     st.latex(r"tREFI_{scaled} = \frac{tREFI_{base}}{Refresh\_Factor}")
-                    st.write("**Refresh Calculation:** At $T_{case} \leq 85°C$, $tREFI = 7.8 \mu s$. At $85°C < T_{case} \leq 95°C$, the $Refresh\_Factor$ becomes 2, resulting in $tREFI = 3.9 \mu s$ to compensate for increased leakage.")
+                    st.write("**Refresh Calculation:** At $T_{case} > 85°C$, $tREFI$ scales from $7.8\mu s$ to $3.9\mu s$.")
                 st.table(AUDIT_DATA[key]["df"])
 
         with tabs[5]:
             st.header("Risk Summary & Solutions")
             st.success(f"FINAL AUDIT VERDICT: {VERDICT}")
-            
             for risk, solution in SOLUTIONS.items():
-                with st.expander(f"📍 Solution for {risk}"):
-                    st.write(solution)
+                with st.expander(f"📍 Solution for {risk}"): st.write(solution)
             
-            if st.button("Download Professional PDF"):
+            if st.button("Download FULL Professional PDF Report"):
                 pdf = JEDEC_PDF(p_name=proj_name, p_num=current_pn)
                 pdf.add_page()
-                for title, content in AUDIT_DATA.items():
-                    pdf.add_sec(title, content['about'], content['df'])
-                
-                # FIXED: Corrected bytearray handling for screenshot error 30904.jpg
-                pdf_output = pdf.output(dest='S')
-                b64 = base64.b64encode(pdf_output).decode('latin-1')
-                st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Audit_{current_pn}.pdf" style="color:cyan; font-weight:bold;">Click here to Download PDF</a>', unsafe_allow_html=True)
-
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
+                # LOOP THROUGH ALL SECTIONS TO POPULATE PDF
                 
