@@ -60,7 +60,7 @@ SOLUTIONS = {
     "Signal Integrity": "Enable Data Bus Inversion (DBI) and CRC in the controller for high-EMI stability."
 }
 
-# --- 2. ADVANCED PDF ENGINE (Prevents Clipping & Adds Summary) ---
+# --- 2. ADVANCED PDF ENGINE ---
 class JEDEC_PDF(FPDF):
     def __init__(self, p_name="N/A", p_num="TBD"):
         super().__init__()
@@ -78,34 +78,38 @@ class JEDEC_PDF(FPDF):
         self.set_font('Arial', 'B', 11); self.set_fill_color(240, 240, 240)
         self.cell(0, 8, f" {title}", 0, 1, 'L', 1)
         self.set_font('Arial', 'I', 8); self.multi_cell(0, 4, about); self.ln(2)
-        
         w = [25, 25, 25, 115] 
         self.set_font('Arial', 'B', 8)
-        headers = ["Feature", "Value", "Spec", "Significance"]
-        for i, h in enumerate(headers): self.cell(w[i], 8, h, 1, 0, 'C')
+        for i, h in enumerate(["Feature", "Value", "Spec", "Significance"]): self.cell(w[i], 8, h, 1, 0, 'C')
         self.ln()
-        
         self.set_font('Arial', '', 7)
         for row in df.itertuples(index=False):
-            # Dynamic height calculation to prevent clipping
             text_str = str(row[3])
-            # Multi-cell logic for significance
             start_y = self.get_y()
             self.set_xy(self.get_x() + w[0] + w[1] + w[2], start_y)
             self.multi_cell(w[3], 5, text_str, 1, 'L')
             end_y = self.get_y()
             row_h = end_y - start_y
-            
-            # Go back and draw the other cells with matching height
             self.set_xy(self.get_x() - (w[0] + w[1] + w[2] + w[3]), start_y)
             self.cell(w[0], row_h, str(row[0]), 1, 0, 'C')
             self.cell(w[1], row_h, str(row[1]), 1, 0, 'C')
             self.cell(w[2], row_h, str(row[2]), 1, 0, 'C')
-            self.set_y(end_y) # Move to next row position
+            self.set_y(end_y)
 
 # --- 3. UI INTERFACE ---
 st.set_page_config(page_title="DDR4 JEDEC Auditor", layout="wide")
 st.title("🔬 DDR4 JEDEC Professional Auditor")
+
+# --- README / DOCUMENTATION INTEGRATED INTO TOOL ---
+with st.expander("📖 Tool Documentation & JEDEC Standards"):
+    st.markdown("""
+    ### Audit Methodology
+    This tool evaluates DDR4 SDRAM datasheets against **JEDEC JESD79-4** standards.
+    * **Thermal Scaling:** Automatically calculates if $tREFI$ needs to scale from $7.8\mu s$ to $3.9\mu s$ based on $T_{case}$.
+    * **Pkg Delay Compensation:** Extracts 75ps silicon-to-package offsets to be applied as PCB constraints.
+    * **Error Handling:** PDF generator uses dynamic row heights to ensure no significance data is cut.
+    """)
+    st.info("Upload a PDF datasheet below to begin the automated audit.")
 
 proj_name = st.text_input("Project Name", "DDR4-Analysis-v1")
 uploaded_file = st.file_uploader("Upload PDF Datasheet", type=['pdf'])
@@ -131,21 +135,14 @@ if uploaded_file:
             if st.button("Download Final PDF Report"):
                 pdf = JEDEC_PDF(p_name=proj_name, p_num=current_pn)
                 pdf.add_page()
-                for title, content in AUDIT_DATA.items():
-                    pdf.add_sec(title, content['about'], content['df'])
-                
-                # ADD SUMMARY PAGE
+                for title, content in AUDIT_DATA.items(): pdf.add_sec(title, content['about'], content['df'])
                 pdf.add_page()
                 pdf.set_font('Arial', 'B', 14); pdf.cell(0, 10, 'Audit Summary & Solutions', 0, 1, 'L')
-                pdf.set_font('Arial', '', 10)
-                for r, s in SOLUTIONS.items():
-                    pdf.multi_cell(0, 6, f"- {r}: {s}")
-                    pdf.ln(2)
-
-                # FIXED BYTEARRAY HANDLING
+                for r, s in SOLUTIONS.items(): pdf.multi_cell(0, 6, f"- {r}: {s}"); pdf.ln(2)
+                
                 pdf_bytes = pdf.output(dest='S')
                 b64 = base64.b64encode(pdf_bytes).decode('latin-1')
-                st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Complete_Audit_{current_pn}.pdf" style="color:cyan; font-weight:bold;">Click here to Download PDF</a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Audit_{current_pn}.pdf" style="color:cyan; font-weight:bold;">Click here to Download PDF</a>', unsafe_allow_html=True)
     except Exception as e:
         st.error(f"Error: {str(e)}")
         
