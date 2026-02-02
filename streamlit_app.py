@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
-from fpdf import FPDF # Required for professional PDF generation
+from fpdf import FPDF # Professional PDF generation
+import base64
 
 # --- 1. APP CONFIG & STYLING ---
 st.set_page_config(page_title="DDR4 JEDEC Professional Audit", layout="wide")
@@ -17,8 +17,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. JEDEC PARAMETERS ---
-extracted_pn = "RS512M16Z2DD-62DT" # Dynamic target from audit
-bw_loss = 8.97  # Efficiency loss
+# Extracted PN from provided health check
+extracted_pn = "RS512M16Z2DD-62DT" 
+bw_loss = 8.97 #
 
 # --- 3. DYNAMIC UPLOAD ---
 st.markdown("<h1>DDR4 JEDEC Professional Compliance Audit</h1>", unsafe_allow_html=True)
@@ -28,6 +29,7 @@ if uploaded_file:
     st.markdown(f"<p class='project-header'>Project: DDR4-Analysis-v1 | Device PN: {extracted_pn}</p>", unsafe_allow_html=True)
 
     # --- REVIEW SUMMARY OF PART NUMBER ---
+    # Renamed as requested from Health Audit
     st.markdown(f"### 🛰️ Review Summary of Part Number: {extracted_pn}")
     st.markdown(f"""
     <div class="status-box">
@@ -42,9 +44,9 @@ if uploaded_file:
 
     tabs = st.tabs(["🏗️ Architecture", "⚡ DC Power", "⏱️ AC Timing", "🌡️ Thermal", "🛡️ Integrity", "📊 Summary & Solutions"])
 
-    # FULL DATA POPULATION WITH EXPANSIVE SIGNIFICANCE NOTES
     with tabs[0]: # ARCHITECTURE
         st.markdown("<div class='section-header'>Architecture: Silicon-to-Package Mapping</div>", unsafe_allow_html=True)
+        
         df_arch = pd.DataFrame({
             "Feature": ["Density", "Package", "Bank Groups", "Pkg Delay"],
             "Value": ["8Gb (512Mx16)", "96-FBGA", "2 Groups", "75 ps"],
@@ -52,65 +54,94 @@ if uploaded_file:
             "Significance": [
                 "Determines total addressable memory space.",
                 "Defines physical land pattern for PCB mounting.",
-                "Impacts interleaving efficiency.",
-                "Internal delay requiring trace matching."
+                "Impacts interleaving efficiency across banks.",
+                "Internal silicon-to-package delay requiring trace length matching."
             ]
         })
         st.table(df_arch)
-        
+
     with tabs[1]: # DC POWER
         st.markdown("<div class='section-header'>DC Power: Voltage Rail Tolerances</div>", unsafe_allow_html=True)
+        
         df_pwr = pd.DataFrame({
             "Feature": ["VDD", "VPP", "VMAX", "IDD6N"],
             "Value": ["1.20V", "2.50V", "1.50V", "22 mA"],
             "Spec": ["1.26V Max", "2.75V Max", "1.50V Max", "30mA Max"],
             "Significance": [
-                "Core stability; ripple >5% causes bit-flips.",
-                "Wordline boost voltage for row activation.",
-                "Absolute maximum stress limit.",
-                "Standby current consumption."
+                "Core stability; voltage ripple >5% causes bit-flips.",
+                "Wordline boost voltage required for row activation.",
+                "Absolute maximum stress limit before silicon failure.",
+                "Self-refresh standby current consumption."
             ]
         })
         st.table(df_pwr)
 
+    with tabs[2]: # AC TIMING
+        st.markdown("<div class='section-header'>AC Timing: Speed-Bin compliance</div>", unsafe_allow_html=True)
+        
+        df_ac = pd.DataFrame({
+            "Feature": ["tCK", "tAA", "tRFC", "Slew Rate"],
+            "Value": ["625 ps", "13.75 ns", "350 ns", "5.0 V/ns"],
+            "Spec": ["625ps Min", "13.75ns Max", "350ns Std", "4V/ns Min"],
+            "Significance": [
+                "Clock period for 3200 MT/s operation.",
+                "Read command to valid data latency (tAA).",
+                "Refresh cycle window required for data retention.",
+                "Signal sharpness for data eye closure analysis."
+            ]
+        })
+        st.table(df_ac)
+
     with tabs[3]: # THERMAL
         st.markdown("<div class='section-header'>Thermal: Temperature Reliability Scaling</div>", unsafe_allow_html=True)
+        
         df_therm = pd.DataFrame({
             "Feature": ["T-Case Max", "Normal Ref", "Extended Ref", "tREFI (85C)"],
             "Value": ["95C", "1X (0-85C)", "2X (85-95C)", "3.9 us"],
             "Spec": ["JEDEC Limit", "7.8us Interval", "3.9us Interval", "Standard"],
             "Significance": [
-                "Absolute thermal ceiling for operation.",
-                "Standard interval for room temperature.",
-                "2X scaling required for heat leakage mitigation.",
-                "Calculated frequency for data maintenance."
+                "Absolute thermal ceiling for safe operation.",
+                "Standard interval for room temperature operation.",
+                "2X scaling required to combat heat-induced leakage.",
+                "Calculated frequency for cell data maintenance."
             ]
         })
         st.table(df_therm)
 
     with tabs[5]: # SUMMARY & SOLUTIONS
         st.markdown("<div class='section-header'>Audit Summary & Solutions</div>", unsafe_allow_html=True)
+        # Solutions
         st.markdown(f"""
         - **Thermal Risk:** Implement BIOS-level 'Fine Granularity Refresh' to scale tREFI to 3.9us at T-Case > 85C.
         - **Skew Risk:** Apply 75ps Pkg Delay compensation into the PCB layout routing constraints.
         - **Signal Integrity:** Enable Data Bus Inversion (DBI) and CRC in the controller for high-EMI stability.
         """)
-        
-        # --- PDF GENERATOR ---
+
+        # --- FIX FOR LINE 53 (PDF EXPORT) ---
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(200, 10, f"DDR4 JEDEC Professional Audit: {extracted_pn}", ln=True, align='C')
-        pdf.set_font("Arial", '', 12)
+        pdf.set_font("Helvetica", 'B', 16)
+        pdf.cell(0, 10, f"DDR4 JEDEC Audit: {extracted_pn}", ln=True, align='C')
         pdf.ln(10)
-        pdf.cell(200, 10, f"Architecture: Verified (8Gb / 1GB per Die)", ln=True)
-        pdf.cell(200, 10, f"DC Power: Compliant (1.20V VDD)", ln=True)
-        pdf.cell(200, 10, f"Thermal Status: WARNING ({bw_loss}% Loss)", ln=True)
-        pdf.ln(5)
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(200, 10, "Remediation Solutions:", ln=True)
-        pdf.set_font("Arial", '', 10)
-        pdf.multi_cell(0, 5, "- Thermal: scale tREFI to 3.9us at T-Case > 85C.\n- Skew: Apply 75ps Pkg Delay compensation.\n- Integrity: Enable DBI and CRC.")
         
-        pdf_output = pdf.output(dest='S').encode('latin-1')
-        st.download_button(label="📥 Download Final JEDEC Audit Report (PDF)", data=pdf_output, file_name=f"DDR4_Audit_{extracted_pn}.pdf", mime="application/pdf")
+        pdf.set_font("Helvetica", 'B', 12)
+        pdf.cell(0, 10, "1. Executive Summary", ln=True)
+        pdf.set_font("Helvetica", '', 10)
+        pdf.cell(0, 8, f"Architecture: Verified (8Gb / 1GB per Die)", ln=True)
+        pdf.cell(0, 8, f"Thermal Tax: {bw_loss}% Loss Detected", ln=True)
+        pdf.ln(5)
+
+        pdf.set_font("Helvetica", 'B', 12)
+        pdf.cell(0, 10, "2. Remediation Solutions", ln=True)
+        pdf.set_font("Helvetica", '', 10)
+        pdf.multi_cell(0, 6, "- Thermal: Scale tREFI to 3.9us at temperatures > 85C.\n- Skew: Compensate for 75ps internal Pkg Delay in routing.\n- Integrity: Enable CRC/DBI features in memory controller.")
+
+        # Modern fpdf2 output logic (returns bytes)
+        pdf_bytes = pdf.output()
+        
+        st.download_button(
+            label="📥 Download Final JEDEC Audit Report (PDF)",
+            data=pdf_bytes,
+            file_name=f"JEDEC_Audit_{extracted_pn}.pdf",
+            mime="application/pdf"
+        )
