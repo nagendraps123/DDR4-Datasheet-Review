@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-from fpdf import FPDF # Professional PDF generation
-import base64
+from fpdf import FPDF
+import io  # Added for robust byte-stream handling
 
 # --- 1. APP CONFIG & STYLING ---
 st.set_page_config(page_title="DDR4 JEDEC Professional Audit", layout="wide")
@@ -17,11 +17,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. JEDEC PARAMETERS ---
-# Extracted PN from provided health check
-extracted_pn = "RS512M16Z2DD-62DT" 
+extracted_pn = "RS512M16Z2DD-62DT" #
 bw_loss = 8.97 #
 
-# --- 3. DYNAMIC UPLOAD ---
+# --- 3. LANDING PAGE & UPLOAD ---
 st.markdown("<h1>DDR4 JEDEC Professional Compliance Audit</h1>", unsafe_allow_html=True)
 uploaded_file = st.file_uploader("📂 Upload Vendor Datasheet (PDF)", type="pdf")
 
@@ -29,7 +28,6 @@ if uploaded_file:
     st.markdown(f"<p class='project-header'>Project: DDR4-Analysis-v1 | Device PN: {extracted_pn}</p>", unsafe_allow_html=True)
 
     # --- REVIEW SUMMARY OF PART NUMBER ---
-    # Renamed as requested from Health Audit
     st.markdown(f"### 🛰️ Review Summary of Part Number: {extracted_pn}")
     st.markdown(f"""
     <div class="status-box">
@@ -76,22 +74,6 @@ if uploaded_file:
         })
         st.table(df_pwr)
 
-    with tabs[2]: # AC TIMING
-        st.markdown("<div class='section-header'>AC Timing: Speed-Bin compliance</div>", unsafe_allow_html=True)
-        
-        df_ac = pd.DataFrame({
-            "Feature": ["tCK", "tAA", "tRFC", "Slew Rate"],
-            "Value": ["625 ps", "13.75 ns", "350 ns", "5.0 V/ns"],
-            "Spec": ["625ps Min", "13.75ns Max", "350ns Std", "4V/ns Min"],
-            "Significance": [
-                "Clock period for 3200 MT/s operation.",
-                "Read command to valid data latency (tAA).",
-                "Refresh cycle window required for data retention.",
-                "Signal sharpness for data eye closure analysis."
-            ]
-        })
-        st.table(df_ac)
-
     with tabs[3]: # THERMAL
         st.markdown("<div class='section-header'>Thermal: Temperature Reliability Scaling</div>", unsafe_allow_html=True)
         
@@ -110,18 +92,18 @@ if uploaded_file:
 
     with tabs[5]: # SUMMARY & SOLUTIONS
         st.markdown("<div class='section-header'>Audit Summary & Solutions</div>", unsafe_allow_html=True)
-        # Solutions
+        # Solutions from Summary Tab
         st.markdown(f"""
         - **Thermal Risk:** Implement BIOS-level 'Fine Granularity Refresh' to scale tREFI to 3.9us at T-Case > 85C.
         - **Skew Risk:** Apply 75ps Pkg Delay compensation into the PCB layout routing constraints.
         - **Signal Integrity:** Enable Data Bus Inversion (DBI) and CRC in the controller for high-EMI stability.
         """)
 
-        # --- FIX FOR LINE 53 (PDF EXPORT) ---
+        # --- REFACTORED PDF GENERATOR (STABLE) ---
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Helvetica", 'B', 16)
-        pdf.cell(0, 10, f"DDR4 JEDEC Audit: {extracted_pn}", ln=True, align='C')
+        pdf.cell(0, 10, f"DDR4 JEDEC Professional Audit: {extracted_pn}", ln=True, align='C')
         pdf.ln(10)
         
         pdf.set_font("Helvetica", 'B', 12)
@@ -136,12 +118,15 @@ if uploaded_file:
         pdf.set_font("Helvetica", '', 10)
         pdf.multi_cell(0, 6, "- Thermal: Scale tREFI to 3.9us at temperatures > 85C.\n- Skew: Compensate for 75ps internal Pkg Delay in routing.\n- Integrity: Enable CRC/DBI features in memory controller.")
 
-        # Modern fpdf2 output logic (returns bytes)
-        pdf_bytes = pdf.output()
+        # Stream buffer to ensure raw bytes are passed to Streamlit
+        pdf_buffer = io.BytesIO()
+        pdf_content = pdf.output()
+        pdf_buffer.write(pdf_content)
+        pdf_buffer.seek(0)
         
         st.download_button(
             label="📥 Download Final JEDEC Audit Report (PDF)",
-            data=pdf_bytes,
+            data=pdf_buffer,
             file_name=f"JEDEC_Audit_{extracted_pn}.pdf",
             mime="application/pdf"
         )
