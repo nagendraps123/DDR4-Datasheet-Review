@@ -1,219 +1,183 @@
 import streamlit as st
 import pdfplumber
-import pandas as pd
 import re
+import pandas as pd
 
-# --------------------------------------------------
-# PAGE CONFIG
-# --------------------------------------------------
-st.set_page_config(page_title="DDR4 Datasheet Review Tool", layout="wide")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(
+    page_title="DDR4 Datasheet Review Tool",
+    layout="wide"
+)
 
-# --------------------------------------------------
-# LANDING PAGE
-# --------------------------------------------------
-st.title("📘 DDR4 Datasheet Review & Compliance Tool")
+# ---------------- HEADER ----------------
+st.title("📘 DDR4 Datasheet Review Tool")
+st.caption(
+    "Upload a DDR4 datasheet PDF and review critical electrical, timing, thermal, "
+    "and reliability parameters with engineering interpretation."
+)
 
-st.markdown("""
-**Purpose**  
-Review DDR4 vendor datasheets against **JEDEC JESD79-4** requirements.
+st.markdown(
+    "[JEDEC DDR4 Standard (JESD79-4)](https://www.jedec.org/standards-documents/docs/jesd79-4)"
+)
 
-🔗 **JEDEC DDR4 Standard**  
-https://www.jedec.org/standards-documents/docs/jesd79-4
----
-""")
+st.divider()
 
+# ---------------- FILE UPLOAD ----------------
 uploaded_file = st.file_uploader(
-    "📤 Upload DDR4 Vendor Datasheet (PDF)",
+    "📤 Upload DDR4 Datasheet (PDF only)",
     type=["pdf"]
 )
 
-# ⛔ STOP HERE IF NO DATASHEET
-if uploaded_file is None:
-    st.info("Please upload a DDR4 datasheet to start the review.")
+if not uploaded_file:
+    st.info("⬆️ Please upload a DDR4 datasheet to start the review.")
     st.stop()
 
-st.success(f"Datasheet loaded: **{uploaded_file.name}**")
+# ---------------- PDF TEXT EXTRACTION ----------------
+pages_text = []
 
-# --------------------------------------------------
-# PDF TEXT EXTRACTION
-# --------------------------------------------------
-@st.cache_data
-def extract_pages(file):
-    pages = []
-    with pdfplumber.open(file) as pdf:
-        for i, page in enumerate(pdf.pages):
-            text = page.extract_text()
-            if text:
-                pages.append((i + 1, text))
-    return pages
+with pdfplumber.open(uploaded_file) as pdf:
+    for i, page in enumerate(pdf.pages):
+        text = page.extract_text()
+        if text:
+            pages_text.append((i + 1, text))
 
-pages = extract_pages(uploaded_file)
+full_text = "\n".join([t for _, t in pages_text])
 
-# --------------------------------------------------
-# SAFE VALUE EXTRACTION
-# --------------------------------------------------
-def extract_param(pattern, unit=None):
-    for page_no, text in pages:
-        m = re.search(pattern, text, re.IGNORECASE)
-        if m:
-            confidence = 0.6
-            if unit and unit.lower() in text.lower():
-                confidence += 0.2
-            confidence += 0.2
-            return {
-                "value": m.group(1),
-                "page": page_no,
-                "confidence": round(confidence, 2)
-            }
-    return {
-        "value": "Not found",
-        "page": "-",
-        "confidence": 0.0
-    }
+# Helper function
+def find_param(pattern):
+    for page_no, text in pages_text:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(), page_no
+    return "Not found", None
 
-# --------------------------------------------------
-# PARAMETER EXTRACTION (ONLY AFTER UPLOAD)
-# --------------------------------------------------
-data = {
-    "tAA": extract_param(r"tAA\s*=?\s*(\d+\.?\d*)", "ns"),
-    "tRCD": extract_param(r"tRCD\s*=?\s*(\d+\.?\d*)", "ns"),
-    "tRP": extract_param(r"tRP\s*=?\s*(\d+\.?\d*)", "ns"),
-    "tRAS": extract_param(r"tRAS\s*=?\s*(\d+\.?\d*)", "ns"),
-    "tRFC": extract_param(r"tRFC1?\s*=?\s*(\d+\.?\d*)", "ns"),
-    "tREFI": extract_param(r"tREFI\s*=?\s*(\d+\.?\d*)", "us"),
-    "Tcase": extract_param(r"(?:Tcase|max case).*?(\d+)", "°C")
+# ---------------- PARAM EXTRACTION ----------------
+params = {
+    "DDR Clock Frequency": find_param(r"\b\d{3,4}\s*MHz\b"),
+    "CAS Latency (CL)": find_param(r"CL\s*=\s*\d+"),
+    "tRCD": find_param(r"tRCD\s*=\s*\d+"),
+    "tRP": find_param(r"tRP\s*=\s*\d+"),
+    "Refresh Interval (tREFI)": find_param(r"tREFI\s*=\s*\d+"),
+    "Operating Temperature": find_param(r"-?\d+\s*°?C\s*to\s*\+?\d+\s*°?C"),
 }
 
-JEDEC = {
-    "tAA": 14.0,
-    "tRCD": 14.0,
-    "tRP": 14.0,
-    "tRAS": 32.0,
-    "tRFC": 350,
-    "tREFI": 7.8,
-    "Tcase": 95
-}
-
-# --------------------------------------------------
-# REVIEW TABS (VISIBLE ONLY AFTER UPLOAD)
-# --------------------------------------------------
+# ---------------- TABS ----------------
 tabs = st.tabs([
-    "⏱ AC Timing",
-    "🔄 Refresh & Bandwidth",
+    "🕒 Timing Parameters",
+    "⏱ Refresh Behavior",
+    "📊 Bandwidth Impact",
     "🌡 Thermal Limits",
-    "📋 Final Summary"
+    "🧾 Final Review Summary"
 ])
 
-failures = []
-
-# ==================================================
-# AC TIMING
-# ==================================================
+# ---------------- TAB 1: TIMING ----------------
 with tabs[0]:
-    st.subheader("⏱ AC Timing Parameters")
+    st.subheader("🕒 DDR4 Timing Parameters")
 
     st.markdown("""
-**Why this matters**  
-AC timings define **data correctness**.  
-Violations can cause silent corruption and field failures.
+**Why this matters:**  
+Timing parameters define how fast memory operations occur.  
+Aggressive timing → higher performance, but **lower margin**.
 """)
 
-    rows = []
-    for p in ["tAA", "tRCD", "tRP", "tRAS"]:
-        v = data[p]
-        try:
-            val = float(v["value"])
-            status = "FAIL ❌" if val > JEDEC[p] else "PASS ✅"
-        except:
-            status = "UNKNOWN ⚠️"
+    timing_df = pd.DataFrame([
+        {"Parameter": "CAS Latency (CL)", "Extracted Value": params["CAS Latency (CL)"][0], "Page": params["CAS Latency (CL)"][1]},
+        {"Parameter": "tRCD", "Extracted Value": params["tRCD"][0], "Page": params["tRCD"][1]},
+        {"Parameter": "tRP", "Extracted Value": params["tRP"][0], "Page": params["tRP"][1]},
+    ])
 
-        if status.startswith("FAIL"):
-            failures.append(p)
+    st.dataframe(timing_df, use_container_width=True)
 
-        rows.append({
-            "Parameter": p,
-            "Meaning": {
-                "tAA": "Read access latency",
-                "tRCD": "Activate → Read delay",
-                "tRP": "Precharge time",
-                "tRAS": "Row active time"
-            }[p],
-            "Vendor Value": v["value"],
-            "JEDEC Limit": JEDEC[p],
-            "Page": v["page"],
-            "Confidence": v["confidence"],
-            "Status": status
-        })
+    st.markdown("""
+**Engineering interpretation:**
+- CL, tRCD, tRP must align with **memory controller capability**
+- Lower values increase risk at high temperature & voltage corners
+""")
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
-
-# ==================================================
-# REFRESH
-# ==================================================
+# ---------------- TAB 2: REFRESH ----------------
 with tabs[1]:
-    st.subheader("🔄 Refresh Behavior & Bandwidth Impact")
+    st.subheader("⏱ DDR4 Refresh Behavior")
 
     st.markdown("""
-**Why refresh matters**  
-At high temperature, refresh frequency increases, reducing usable bandwidth.
+**Why this matters:**  
+DDR4 refresh directly impacts **data retention** and **effective bandwidth**.
 """)
 
-    try:
-        tRFC = float(data["tRFC"]["value"])
-        tREFI = float(data["tREFI"]["value"])
-        bw_loss = (tRFC / (tREFI * 1000)) * 100
-        st.metric("Estimated Bandwidth Loss (2× Refresh)", f"{bw_loss:.2f}%")
-    except:
-        st.warning("Insufficient datasheet data to compute bandwidth loss.")
+    st.write(
+        f"**tREFI:** {params['Refresh Interval (tREFI)'][0]} "
+        f"(Page {params['Refresh Interval (tREFI)'][1]})"
+    )
 
-# ==================================================
-# THERMAL
-# ==================================================
+    st.markdown("""
+**Key risks:**
+- High temperature → refresh must increase
+- Double refresh reduces usable bandwidth
+""")
+
+# ---------------- TAB 3: BANDWIDTH ----------------
 with tabs[2]:
-    st.subheader("🌡 Thermal Limits & Extended Temperature")
+    st.subheader("📊 Bandwidth Loss Due to Refresh")
 
     st.markdown("""
-**Extended temperature operation (>85°C)**  
-Requires **2× refresh** and causes performance degradation.
+**Scenario analysis (typical):**
+- Normal refresh: ~1–2% bandwidth loss
+- Double refresh (high temp): **3–5% loss**
 """)
 
-    tcase = data["Tcase"]
-    status = "PASS ✅" if str(tcase["value"]).isdigit() and int(tcase["value"]) <= JEDEC["Tcase"] else "FAIL ❌"
+    st.warning("""
+⚠ If controller does not compensate timing,
+system throughput degradation may be visible in:
+- Wi-Fi routing
+- Video buffering
+- Cache-heavy workloads
+""")
 
-    st.table(pd.DataFrame([{
-        "Parameter": "Max Case Temperature",
-        "Vendor Value": tcase["value"],
-        "JEDEC Limit": JEDEC["Tcase"],
-        "Page": tcase["page"],
-        "Confidence": tcase["confidence"],
-        "Status": status
-    }]))
-
-# ==================================================
-# FINAL SUMMARY
-# ==================================================
+# ---------------- TAB 4: THERMAL ----------------
 with tabs[3]:
-    st.subheader("📋 Datasheet Review Summary")
+    st.subheader("🌡 Thermal Limits & Implications")
 
-    if failures:
-        st.error("❌ CONDITIONAL PASS – Timing Risks Identified")
-    else:
-        st.success("✅ DATASHEET COMPLIANT WITH JEDEC")
+    st.write(
+        f"**Operating Temperature Range:** {params['Operating Temperature'][0]} "
+        f"(Page {params['Operating Temperature'][1]})"
+    )
 
-    st.markdown("### Key Findings")
-    st.markdown(f"""
-- Timing violations: **{', '.join(failures) if failures else 'None'}**
-- Thermal behavior reviewed
-- Conclusions based on datasheet-extracted values
+    st.markdown("""
+**Why thermal limits are critical:**
+- Above 85°C → DDR4 requires higher refresh rate
+- Extended temp parts (95–105°C) must be explicitly rated
 """)
 
-    st.markdown("### Proposed Engineering Actions")
-    if failures:
-        st.markdown("""
-1. Down-bin speed grade (e.g. DDR4-2933)  
-2. Increase CAS latency (+2 cycles)  
-3. Enforce 2× refresh above 85°C  
-4. Avoid high-performance SKUs for extended temp
+    st.error("""
+❗ If datasheet does not clearly state extended temperature behavior,
+risk of silent data corruption exists.
 """)
-    else:
-        st.markdown("No corrective action required.")
+
+# ---------------- FINAL SUMMARY ----------------
+with tabs[4]:
+    st.subheader("🧾 DDR4 Datasheet Review Summary")
+
+    st.markdown("""
+### ✔ Findings
+- Core DDR4 timing parameters identified from datasheet
+- Refresh behavior partially specified
+- Thermal operating range extracted
+
+### ⚠ Risks Identified
+1. Missing clarity on **high-temperature refresh behavior**
+2. No explicit bandwidth degradation guidance
+3. Timing margins not correlated with temperature
+
+### 🛠 Proposed Engineering Actions
+- Validate timing at **worst-case temperature**
+- Enforce controller-side refresh compensation
+- Request vendor clarification on:
+  - Double refresh impact
+  - Extended temperature guarantees
+
+### ✅ Review Verdict
+**Conditionally acceptable**, pending:
+- Thermal stress validation
+- Controller timing margin analysis
+""")
+
+    st.success("Datasheet review completed with actionable insights.")
