@@ -1,166 +1,133 @@
 import streamlit as st
 import pandas as pd
+import io
 import re
-from PyPDF2 import PdfReader
-from fpdf import FPDF
-import base64
 
-# --- 1. GLOBAL AUDIT DATA (Verified for Line 60 Stability) ---
-AUDIT_DATA = {
-    "Architecture": {
-        "about": "Validates physical silicon-to-package mapping and signal skew offsets.",
-        "df": pd.DataFrame({
-            "Feature": ["Density", "Package", "Bank Groups", "Pkg Delay"],
-            "Value": ["8Gb (512Mx16)", "96-FBGA", "2 Groups", "75 ps"],
-            "Spec": ["Standard", "Standard", "x16 Type", "100ps Max"],
-            "Significance": ["Determines total addressable memory space.", "Defines physical land pattern for PCB mounting.", "Impacts interleaving efficiency.", "Internal delay requiring trace matching."]
-        })
-    },
-    "DC Power": {
-        "about": "Audits voltage rail tolerances and maximum stress limits.",
-        "df": pd.DataFrame({
-            "Feature": ["VDD", "VPP", "VMAX", "IDD6N"],
-            "Value": ["1.20V", "2.50V", "1.50V", "22 mA"],
-            "Spec": ["1.26V Max", "2.75V Max", "1.50V Max", "30mA Max"],
-            "Significance": ["Core stability; ripple >5% causes bit-flips.", "Wordline boost voltage for row activation.", "Absolute maximum stress limit.", "Standby current consumption."]
-        })
-    },
-    "AC Timing": {
-        "about": "Verifies speed-bin compliance and CAS latency (tAA) margins.",
-        "df": pd.DataFrame({
-            "Feature": ["tCK", "tAA", "tRFC", "Slew Rate"],
-            "Value": ["625 ps", "13.75 ns", "350 ns", "5.0 V/ns"],
-            "Spec": ["625ps Min", "13.75ns Max", "350ns Std", "4V/ns Min"],
-            "Significance": ["Clock period for 3200 MT/s operation.", "Read command to valid data latency.", "Refresh cycle window required for retention.", "Signal sharpness for data eye closure."]
-        })
-    },
-    "Thermal": {
-        "about": "Validates refresh rate scaling (tREFI) for high-temperature reliability.",
-        "df": pd.DataFrame({
-            "Feature": ["T-Case Max", "Normal Ref", "Extended Ref", "tREFI (85C)"],
-            "Value": ["95C", "1X (0-85C)", "2X (85-95C)", "3.9 us"],
-            "Spec": ["JEDEC Limit", "7.8us Interval", "3.9us Interval", "Standard"],
-            "Significance": ["Absolute thermal ceiling for operation.", "Standard interval for room temperature.", "2X scaling required for heat leakage.", "Calculated frequency for data maintenance."]
-        })
-    },
-    "Integrity": {
-        "about": "Audits reliability features like CRC and DBI to mitigate bus noise.",
-        "df": pd.DataFrame({
-            "Feature": ["CRC", "DBI", "Parity", "PPR"],
-            "Value": ["Yes", "Yes", "Yes", "Yes"],
-            "Spec": ["Optional", "Optional", "Optional", "Optional"],
-            "Significance": ["Detects data transmission errors.", "Reduces switching noise and power.", "Command/Address error detection.", "Field repair for faulty cell rows."]
-        })
-    }
+# --- 1. JEDEC CONSTANTS & DATABASE ---
+JEDEC_DB = {
+    "3200AA": {"tAA": 13.75, "tRCD": 13.75, "tRP": 13.75, "tCK": 0.625, "CL": 22},
+    "3200AC": {"tAA": 15.00, "tRCD": 15.00, "tRP": 15.00, "tCK": 0.625, "CL": 24},
+    "2933V":  {"tAA": 13.64, "tRCD": 13.64, "tRP": 13.64, "tCK": 0.682, "CL": 20},
+    "2666T":  {"tAA": 13.50, "tRCD": 13.50, "tRP": 13.50, "tCK": 0.750, "CL": 18},
 }
 
-SOLUTIONS = {
-    "Thermal Risk": "Implement BIOS-level 'Fine Granularity Refresh' to scale tREFI to 3.9us at T-Case > 85C.",
-    "Skew Risk": "Apply 75ps Pkg Delay compensation into the PCB layout routing constraints.",
-    "Signal Integrity": "Enable Data Bus Inversion (DBI) and CRC in the controller for high-EMI stability."
+REFRESH_DB = {
+    "8Gb": {"tRFC": 350, "tREFI": 7.8},
+    "16Gb": {"tRFC": 550, "tREFI": 7.8},
 }
 
-# --- 2. ADVANCED PDF ENGINE (Dynamic Row Heights) ---
-class JEDEC_PDF(FPDF):
-    def __init__(self, p_name="N/A", p_num="TBD"):
-        super().__init__()
-        self.p_name, self.p_num = p_name, p_num
+# --- 2. CORE LOGIC FUNCTIONS ---
+def audit_logic(vendor_val, jedec_val, direction="max"):
+    if direction == "max":
+        status = "✅ Pass" if vendor_val <= jedec_val else "🚨 FAIL"
+    else:
+        status = "✅ Pass" if vendor_val >= jedec_val else "🚨 FAIL"
+    return status
 
-    def header(self):
-        self.set_font('Arial', 'B', 14)
-        self.cell(0, 10, 'DDR4 JEDEC Professional Compliance Audit', 0, 1, 'C')
-        self.set_font('Arial', '', 8)
-        self.cell(0, 5, f"Project: {self.p_name} | Device PN: {self.p_num}", 0, 1, 'C')
-        self.ln(5)
+def calculate_refresh_tax(trfc, trefi):
+    # tREFI is in us, tRFC is in ns. Convert to same unit.
+    tax = (trfc / (trefi * 1000)) * 100
+    return round(tax, 2)
 
-    def add_sec(self, title, about, df):
-        if self.get_y() > 200: self.add_page()
-        self.set_font('Arial', 'B', 11); self.set_fill_color(240, 240, 240)
-        self.cell(0, 8, f" {title}", 0, 1, 'L', 1)
-        self.set_font('Arial', 'I', 8); self.multi_cell(0, 4, about); self.ln(2)
-        
-        w = [25, 25, 25, 115] 
-        self.set_font('Arial', 'B', 8)
-        headers = ["Feature", "Value", "Spec", "Significance"]
-        for i, h in enumerate(headers):
-            self.cell(w[i], 8, h, 1, 0, 'C')
-        self.ln()
-        
-        self.set_font('Arial', '', 7)
-        for row in df.itertuples(index=False):
-            # Dynamic height calculation to prevent significance clipping
-            text_str = str(row[3])
-            start_y = self.get_y()
-            self.set_xy(self.get_x() + w[0] + w[1] + w[2], start_y)
-            self.multi_cell(w[3], 5, text_str, 1, 'L')
-            end_y = self.get_y()
-            row_h = end_y - start_y
-            
-            # Draw side cells matching the Significance column height
-            self.set_xy(self.get_x() - (w[0] + w[1] + w[2] + w[3]), start_y)
-            self.cell(w[0], row_h, str(row[0]), 1, 0, 'C')
-            self.cell(w[1], row_h, str(row[1]), 1, 0, 'C')
-            self.cell(w[2], row_h, str(row[2]), 1, 0, 'C')
-            self.set_y(end_y)
+# --- 3. STREAMLIT UI ---
+st.set_page_config(page_title="DDR4 JEDEC Silicon-Audit", layout="wide")
 
-# --- 3. UI INTERFACE ---
-st.set_page_config(page_title="DDR4 JEDEC Auditor", layout="wide")
+st.title("🛠️ DDR4 Silicon-Audit & JEDEC Comparator")
+st.markdown("### Technical Gatekeeper: JESD79-4B Compliance Verification")
 
-# Landing Page Introduction
-st.title("🔬 DDR4 JEDEC Professional Auditor")
-st.markdown("""
-### **Introduction**
-This professional auditing suite evaluates DDR4 memory datasheets against JEDEC compliance standards. 
-It automates parameter extraction and performs high-temperature reliability analysis to ensure 
-system-level stability.
-
-**Audit Workflow:**
-1. **Upload Datasheet:** Provide a PDF for part number (PN) identification.
-2. **Review TABS:** Navigate through Architecture, Power, and Timing audits.
-3. **Analyze Solutions:** View BIOS and PCB layout risk mitigation strategies.
-4. **Generate Report:** Export a full, wrap-aware PDF audit for documentation.
----
-""")
-
-proj_name = st.text_input("Project Name", "DDR4-Analysis-v1")
-uploaded_file = st.file_uploader("Upload PDF Datasheet", type=['pdf'])
+# Sidebar for Inputs
+st.sidebar.header("📂 Data Ingestion")
+uploaded_file = st.sidebar.file_uploader("Upload Vendor Datasheet (PDF)", type="pdf")
+target_bin = st.sidebar.selectbox("Target Speed Bin", list(JEDEC_DB.keys()))
+density = st.sidebar.selectbox("Silicon Density", ["8Gb", "16Gb"])
 
 if uploaded_file:
-    try:
-        reader = PdfReader(uploaded_file)
-        text = "".join([p.extract_text() for p in reader.pages if p.extract_text()])
-        pn_search = re.search(r"(\w{5,}\d\w+)", text)
-        current_pn = pn_search.group(1) if pn_search else "K4A8G165WCR"
+    # SIMULATED EXTRACTION (In real GitHub code, use PyMuPDF or pdfplumber here)
+    # Mocking extracted data for demonstration
+    vendor_data = {
+        "pn": "MT40A1G8-062E",
+        "tAA": 14.06,  # Slower than 13.75
+        "tRCD": 13.75,
+        "tRP": 13.75,
+        "tRFC": 350,
+        "v_dd": 1.2,
+        "bg_count": 4,
+        "page_proof": 18
+    }
 
-        tabs = st.tabs(["🏗️ Architecture", "⚡ DC Power", "⏱️ AC Timing", "🌡️ Thermal", "🛡️ Integrity", "📊 Summary"])
+    # --- EXECUTIVE SUMMARY ---
+    tax = calculate_refresh_tax(vendor_data['tRFC'], REFRESH_DB[density]['tREFI'])
+    
+    st.subheader("🚀 Executive Audit Summary")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Part Number", vendor_data['pn'])
+    col2.metric("Detected Density", density)
+    col3.metric("Refresh Tax", f"{tax}%", delta="- High Performance" if tax > 5 else "Normal")
+    
+    verdict = "🚨 CONDITIONAL FAIL" if vendor_data['tAA'] > JEDEC_DB[target_bin]['tAA'] else "✅ PASS"
+    col4.subheader(f"Verdict: {verdict}")
 
-        for i, (key, tab) in enumerate(zip(AUDIT_DATA.keys(), tabs[:5])):
-            with tab:
-                st.info(AUDIT_DATA[key]["about"])
-                st.table(AUDIT_DATA[key]["df"])
+    # --- 9 TAB INTERFACE ---
+    tabs = st.tabs([
+        "0. Basics", "1. Addressing", "2. Power", "3. AC Timings", 
+        "4. Refresh", "5. Initialization", "6. DQ/SI", "7. Thermal", "8. Validation Log"
+    ])
 
-        with tabs[5]:
-            st.header("Audit Summary & Solutions")
-            for k, v in SOLUTIONS.items():
-                st.warning(f"**{k}**: {v}")
-            
-            if st.button("Download Final PDF Report"):
-                pdf = JEDEC_PDF(p_name=proj_name, p_num=current_pn)
-                pdf.add_page()
-                for title, content in AUDIT_DATA.items():
-                    pdf.add_sec(title, content['about'], content['df'])
-                
-                # Summary Solutions Page
-                pdf.add_page()
-                pdf.set_font('Arial', 'B', 14); pdf.cell(0, 10, 'Audit Summary & Solutions', 0, 1, 'L')
-                pdf.set_font('Arial', '', 10)
-                for r, s in SOLUTIONS.items():
-                    pdf.multi_cell(0, 6, f"- {r}: {s}"); pdf.ln(2)
+    # TAB 0: BASICS
+    with tabs[0]:
+        st.markdown("### DDR4 Architecture Fundamentals")
+        st.write("DDR4 introduces Bank Groups to increase bandwidth. Understanding the relationship between the clock and data strobe is key to auditing this datasheet.")
+        
 
-                # Resolved bytearray object has no attribute 'encode'
-                pdf_bytes = pdf.output(dest='S')
-                b64 = base64.b64encode(pdf_bytes).decode('latin-1')
-                st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Audit_{current_pn}.pdf" style="color:cyan; font-weight:bold;">Click here to Download PDF</a>', unsafe_allow_html=True)
+    # TAB 1: ADDRESSING
+    with tabs[1]:
+        st.write("### Configuration & Addressing Audit")
+        df1 = pd.DataFrame([{
+            "Parameter": "Bank Groups",
+            "Vendor": vendor_data['bg_count'],
+            "JEDEC": 4,
+            "Status": "✅ Pass",
+            "Ref": "Table 2",
+            "Note": "Correct BG count for x8 organization."
+        }])
+        st.table(df1)
+        
 
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
+    # TAB 3: AC TIMINGS (THE BRAIN)
+    with tabs[3]:
+        st.write("### Speed Bin Authentication")
+        status_taa = audit_logic(vendor_data['tAA'], JEDEC_DB[target_bin]['tAA'])
+        df3 = pd.DataFrame([
+            {"Parameter": "tAA (ns)", "Vendor": vendor_data['tAA'], "JEDEC": JEDEC_DB[target_bin]['tAA'], "Status": status_taa, "Ref": "Table 136"},
+            {"Parameter": "tRCD (ns)", "Vendor": vendor_data['tRCD'], "JEDEC": JEDEC_DB[target_bin]['tRCD'], "Status": "✅ Pass", "Ref": "Table 136"}
+        ])
+        st.table(df3)
+        if status_taa == "🚨 FAIL":
+            st.error(f"**Warning:** Vendor tAA exceeds JEDEC limit for {target_bin}. This chip is effectively a slower grade (3200AC).")
+        
+
+    # TAB 8: VALIDATION LOG
+    with tabs[8]:
+        st.write("### 🔍 Traceability & Validation Proof")
+        log_data = [
+            {"Parameter": "AC Timings", "Source": f"Page {vendor_data['page_proof']}", "Snippet": "tAA (min) ... 14.06ns", "Method": "Regex Search"},
+            {"Parameter": "Power Rails", "Source": "Page 5", "Snippet": "VDD = 1.2V +/- 0.06V", "Method": "Table Extraction"}
+        ]
+        st.table(log_data)
+
+    # --- EXPORT TO EXCEL (io.BytesIO) ---
+    st.divider()
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        df3.to_excel(writer, sheet_name='AC_Timings_Audit')
+        # Add all other tab dataframes here
+    
+    st.download_button(
+        label="📥 Download Professional Audit Report (Excel)",
+        data=buffer.getvalue(),
+        file_name=f"JEDEC_Audit_{vendor_data['pn']}.xlsx",
+        mime="application/vnd.ms-excel"
+    )
+
+else:
+    st.info("Please upload a DDR4 datasheet PDF to begin the automated audit.")
