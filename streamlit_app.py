@@ -6,7 +6,6 @@ from fpdf import FPDF
 import base64
 
 # --- 1. GLOBAL AUDIT DATA ---
-# This dictionary is carefully formatted to avoid syntax errors on lines 10-60.
 AUDIT_DATA = {
     "Architecture": {
         "about": "Validates physical silicon-to-package mapping and signal skew offsets.",
@@ -56,12 +55,12 @@ AUDIT_DATA = {
 }
 
 SOLUTIONS = {
-    "Thermal Fix": "Implement BIOS-level 'Fine Granularity Refresh' to scale tREFI to 3.9us at T-Case >85C.",
-    "Skew Fix": "Apply 75ps Pkg Delay compensation into the PCB layout routing constraints.",
-    "Signal Fix": "Enable Data Bus Inversion (DBI) and CRC in the controller for high-EMI stability."
+    "Thermal Risk": "Implement BIOS-level 'Fine Granularity Refresh' to scale tREFI to 3.9us at T-Case > 85C.",
+    "Skew Risk": "Apply 75ps Pkg Delay compensation into the PCB layout routing constraints.",
+    "Signal Integrity": "Enable Data Bus Inversion (DBI) and CRC in the controller for high-EMI stability."
 }
 
-# --- 2. ADVANCED PDF ENGINE (Prevents Content Cutting) ---
+# --- 2. ADVANCED PDF ENGINE (Prevents Clipping & Adds Summary) ---
 class JEDEC_PDF(FPDF):
     def __init__(self, p_name="N/A", p_num="TBD"):
         super().__init__()
@@ -82,23 +81,27 @@ class JEDEC_PDF(FPDF):
         
         w = [25, 25, 25, 115] 
         self.set_font('Arial', 'B', 8)
-        for i, c in enumerate(["Feature", "Value", "Spec", "Significance"]):
-            self.cell(w[i], 8, c, 1, 0, 'C')
+        headers = ["Feature", "Value", "Spec", "Significance"]
+        for i, h in enumerate(headers): self.cell(w[i], 8, h, 1, 0, 'C')
         self.ln()
         
         self.set_font('Arial', '', 7)
         for row in df.itertuples(index=False):
-            # Dynamic height calculation to prevent significance cutting
+            # Dynamic height calculation to prevent clipping
             text_str = str(row[3])
-            nb_lines = (self.get_string_width(text_str) / w[3]) + 1
-            row_h = max(10, int(nb_lines) * 5)
-            
-            x, y = self.get_x(), self.get_y()
-            self.rect(x, y, w[0], row_h); self.cell(w[0], row_h, str(row[0]), 0, 0, 'C')
-            self.rect(x+w[0], y, w[1], row_h); self.cell(w[1], row_h, str(row[1]), 0, 0, 'C')
-            self.rect(x+w[0]+w[1], y, w[2], row_h); self.cell(w[2], row_h, str(row[2]), 0, 0, 'C')
+            # Multi-cell logic for significance
+            start_y = self.get_y()
+            self.set_xy(self.get_x() + w[0] + w[1] + w[2], start_y)
             self.multi_cell(w[3], 5, text_str, 1, 'L')
-            self.set_x(x)
+            end_y = self.get_y()
+            row_h = end_y - start_y
+            
+            # Go back and draw the other cells with matching height
+            self.set_xy(self.get_x() - (w[0] + w[1] + w[2] + w[3]), start_y)
+            self.cell(w[0], row_h, str(row[0]), 1, 0, 'C')
+            self.cell(w[1], row_h, str(row[1]), 1, 0, 'C')
+            self.cell(w[2], row_h, str(row[2]), 1, 0, 'C')
+            self.set_y(end_y) # Move to next row position
 
 # --- 3. UI INTERFACE ---
 st.set_page_config(page_title="DDR4 JEDEC Auditor", layout="wide")
@@ -119,25 +122,30 @@ if uploaded_file:
         for i, (key, tab) in enumerate(zip(AUDIT_DATA.keys(), tabs[:5])):
             with tab:
                 st.info(AUDIT_DATA[key]["about"])
-                if key == "Thermal":
-                    
-                    st.latex(r"tREFI_{scaled} = \frac{tREFI_{base}}{Refresh\_Factor}")
                 st.table(AUDIT_DATA[key]["df"])
 
         with tabs[5]:
             st.header("Audit Summary & Solutions")
-            for k, v in SOLUTIONS.items(): st.warning(v)
+            for k, v in SOLUTIONS.items(): st.warning(f"**{k}**: {v}")
             
-            if st.button("Download PDF Report"):
+            if st.button("Download Final PDF Report"):
                 pdf = JEDEC_PDF(p_name=proj_name, p_num=current_pn)
                 pdf.add_page()
                 for title, content in AUDIT_DATA.items():
                     pdf.add_sec(title, content['about'], content['df'])
                 
-                # FIXED: bytearray handling
-                pdf_output = pdf.output(dest='S')
-                b64 = base64.b64encode(pdf_output).decode('latin-1')
-                st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Audit_Report.pdf" style="color:cyan; font-weight:bold;">Click here to Download PDF</a>', unsafe_allow_html=True)
+                # ADD SUMMARY PAGE
+                pdf.add_page()
+                pdf.set_font('Arial', 'B', 14); pdf.cell(0, 10, 'Audit Summary & Solutions', 0, 1, 'L')
+                pdf.set_font('Arial', '', 10)
+                for r, s in SOLUTIONS.items():
+                    pdf.multi_cell(0, 6, f"- {r}: {s}")
+                    pdf.ln(2)
+
+                # FIXED BYTEARRAY HANDLING
+                pdf_bytes = pdf.output(dest='S')
+                b64 = base64.b64encode(pdf_bytes).decode('latin-1')
+                st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Complete_Audit_{current_pn}.pdf" style="color:cyan; font-weight:bold;">Click here to Download PDF</a>', unsafe_allow_html=True)
     except Exception as e:
         st.error(f"Error: {str(e)}")
-            
+        
