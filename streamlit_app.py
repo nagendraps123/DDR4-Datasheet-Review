@@ -175,4 +175,9 @@ if uploaded_file:
             })
         },
         "5. Command & Address": {
-            "intro": "Verifies CA parity, CRC,
+            "intro": "Verifies CA parity, CRC, DBI compliance.",
+            "df": pd.DataFrame({
+                "Feature": ["CA Parity", "CRC", "DBI", "ACT_n"],
+                "Value": [extracted["CA Parity"], extracted["CRC"], extracted["DBI"], extracted["ACT_n"]],
+                "Spec": ["Required", "Required", "Optional", "Required"],
+                "Significance":
