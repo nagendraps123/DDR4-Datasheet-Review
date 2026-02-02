@@ -12,13 +12,14 @@ st.set_page_config(page_title="JEDEC Automated Audit", layout="wide", page_icon=
 st.title("🛡️ Dynamic DRAM Compliance Audit")
 st.markdown("### Structural validation against JEDEC JESD79-4")
 
-# --- 2. EXTRACTION & AUTO-IDENTIFICATION ---
+# --- 2. IMPROVED EXTRACTION ENGINE ---
 def extract_data(uploaded_file):
     text = ""
     file_bytes = uploaded_file.getvalue() 
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages[:10]:
+            # Scanning up to 15 pages to ensure we hit the timing tables
+            for page in pdf.pages[:15]:
                 content = page.extract_text()
                 if content:
                     text += content + "\n"
@@ -27,17 +28,18 @@ def extract_data(uploaded_file):
     return text
 
 def run_audit(text):
-    # Pattern to find common DRAM Part Numbers (MT..., K4..., H5...)
-    pn_match = re.search(r"\b(MT40A|K4A|H5AN|IS40A|K4B|MT41)[\w\d-]+\b", text)
+    # Aggressive patterns for Part Numbers
+    pn_match = re.search(r"\b(MT40A|K4A|H5AN|IS40A|K4B|MT41|MT40)[\w\d-]+\b", text)
     
+    # Flexible Regex for VDD, tAA, tRP, and Density
     results = {
         "PartNum": pn_match.group(0) if pn_match else "Unknown DRAM Component",
-        "VDD": re.search(r"VDD\s*[:=]?\s*([\d\.]+V)", text, re.IGNORECASE),
-        "tAA": re.search(r"tAA\s*.*?\s*([\d\.]+ns)", text, re.IGNORECASE),
-        "tRP": re.search(r"tRP\s*.*?\s*([\d\.]+ns)", text, re.IGNORECASE),
-        "Density": re.search(r"(\d+Gb|\d+Mb)", text),
-        "CRC": "CRC" in text.upper(),
-        "Parity": "PARITY" in text.upper()
+        "VDD": re.search(r"(?:VDD|Vdd)\s*[:=]?\s*([\d\.]+V)", text),
+        "tAA": re.search(r"(?:tAA|Internal\sRead\sLatency|CAS\sLatency)\s*[:=]?\s*([\d\.]+ns)", text, re.IGNORECASE),
+        "tRP": re.search(r"(?:tRP|Row\sPrecharge)\s*[:=]?\s*([\d\.]+ns)", text, re.IGNORECASE),
+        "Density": re.search(r"(\d+Gb|\d+Mb|\d+\sGb)", text),
+        "CRC": any(word in text.upper() for word in ["WRITE CRC", "CRC ERROR"]),
+        "Parity": any(word in text.upper() for word in ["C/A PARITY", "COMMAND PARITY"])
     }
     return results
 
@@ -50,35 +52,41 @@ if uploaded_file:
     
     st.info(f"🔍 **Auto-Identified Component:** {audit['PartNum']}")
 
-    # --- 4. ENRICHED TAB STRUCTURE ---
+    # --- 4. THE 6-TAB STRUCTURE ---
     tabs = st.tabs(["🏗️ Physical", "⚡ DC Power", "⏱️ AC Timing", "🌡️ Thermal", "🔐 Integrity", "📝 Audit Summary"])
     
     with tabs[0]:
         st.subheader("Physical Architecture Audit")
-        f_density = audit["Density"].group(1) if audit["Density"] else "Not Found"
-        st.table(pd.DataFrame({
+        f_density = audit["Density"].group(1) if audit["Density"] else "Manual Check Required"
+        df_phys = pd.DataFrame({
             "Parameter": ["Density", "Addressing", "Bank Groups"],
             "Detected": [f_density, "Standard Row/Col", "4 Groups"],
-            "JEDEC Req": ["JESD79-4B", "Standardized", "x4/x8: 4 Groups"],
             "Technical Significance": [
-                "Determines total storage capacity and memory map addressing.",
-                "Ensures compatibility with standard memory controllers.",
-                "Enables tCCD_L/S interleaving for higher bus efficiency."
+                "Total capacity; determines memory map and bit-ordering.",
+                "Compatibility with JEDEC standard memory controllers.",
+                "Enables bank-interleaving to reduce bus idle time."
             ]
-        }))
+        })
+        st.table(df_phys)
         
 
     with tabs[1]:
         st.subheader("DC Power Rail Analysis")
-        f_vdd = audit["VDD"].group(1) if audit["VDD"] else "Not Found"
-        st.table(pd.DataFrame({
+        f_vdd = audit["VDD"].group(1) if audit["VDD"] else "Manual Check Required"
+        df_dc = pd.DataFrame({
             "Rail": ["VDD (Core)", "VPP (Wordline)", "VDDQ (I/O)"],
-            "Value": [f_vdd, "2.5V", "1.2V"],
-            "JEDEC Range": ["1.14V - 1.26V", "2.37V - 2.75V", "1.14V - 1.26V"],
+            "Value": [f_vdd, "2.5V (Standard)", "1.2V (Standard)"],
             "Technical Significance": [
-                "Primary logic supply; directly affects power consumption and noise margin.",
-                "High voltage boost needed to overcome wordline threshold voltage.",
-                "Determines signaling drive strength and DQ bus signal integrity."
+                "Main supply voltage; governs logic switching speed and power.",
+                "Boost voltage required for wordline gate overdrive.",
+                "Power for the DQ/DQS output drivers for signal integrity."
             ]
-        }))
+        })
+        st.table(df_dc)
+        
 
+    with tabs[2]:
+        st.subheader("AC Timing Boundaries")
+        f_taa = audit["tAA"].group(1) if audit["tAA"] else "Manual Check Required"
+        f_trp = audit["tRP"].group(1) if audit
+        
