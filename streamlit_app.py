@@ -6,23 +6,24 @@ from fpdf import FPDF
 import base64
 
 # --- 1. GLOBAL AUDIT DATA ---
+# This dictionary is carefully formatted to avoid syntax errors on lines 10-60.
 AUDIT_DATA = {
     "Architecture": {
-        "about": "Validates the physical silicon-to-package mapping and internal package delays.",
+        "about": "Validates physical silicon-to-package mapping and signal skew offsets.",
         "df": pd.DataFrame({
             "Feature": ["Density", "Package", "Bank Groups", "Pkg Delay"],
             "Value": ["8Gb (512Mx16)", "96-FBGA", "2 Groups", "75 ps"],
             "Spec": ["Standard", "Standard", "x16 Type", "100ps Max"],
-            "Significance": ["Determines total addressable memory space and density for the system controller.", "Defines the physical land pattern and ball pitch for PCB manufacturing.", "Determines the number of independent bank accesses possible, impacting interleaving efficiency.", "Internal silicon-to-ball delay that must be compensated for in trace length matching."]
+            "Significance": ["Determines total addressable memory space.", "Defines physical land pattern for PCB mounting.", "Impacts interleaving efficiency.", "Internal delay requiring trace matching."]
         })
     },
     "DC Power": {
-        "about": "Audits voltage rail tolerances (VDD, VPP) and maximum stress limits.",
+        "about": "Audits voltage rail tolerances and maximum stress limits.",
         "df": pd.DataFrame({
             "Feature": ["VDD", "VPP", "VMAX", "IDD6N"],
             "Value": ["1.20V", "2.50V", "1.50V", "22 mA"],
             "Spec": ["1.26V Max", "2.75V Max", "1.50V Max", "30mA Max"],
-            "Significance": ["Core operating voltage; fluctuations exceeding JEDEC limits can cause logic bit-flips.", "High voltage wordline boost required for row activation; low VPP prevents proper cell opening.", "Absolute maximum voltage stress limit; exceeding this risks permanent oxide breakdown.", "Standby current consumption; critical for mobile/laptop battery life during sleep states."]
+            "Significance": ["Core stability; ripple >5% causes bit-flips.", "Wordline boost voltage for row activation.", "Absolute maximum stress limit.", "Standby current consumption."]
         })
     },
     "AC Timing": {
@@ -31,7 +32,7 @@ AUDIT_DATA = {
             "Feature": ["tCK", "tAA", "tRFC", "Slew Rate"],
             "Value": ["625 ps", "13.75 ns", "350 ns", "5.0 V/ns"],
             "Spec": ["625ps Min", "13.75ns Max", "350ns Std", "4V/ns Min"],
-            "Significance": ["Clock period for 3200 MT/s; defines the maximum throughput of the memory channel.", "Minimum time from Read command to valid data; direct impact on system responsiveness.", "Time required for a refresh cycle; essential for maintaining data integrity in the capacitor array.", "Sharpness of the signal transition; poor slew rate causes timing jitter and data eye closure."]
+            "Significance": ["Clock period for 3200 MT/s operation.", "Read command to valid data latency.", "Refresh cycle window required for retention.", "Signal sharpness for data eye closure."]
         })
     },
     "Thermal": {
@@ -39,5 +40,104 @@ AUDIT_DATA = {
         "df": pd.DataFrame({
             "Feature": ["T-Case Max", "Normal Ref", "Extended Ref", "tREFI (85C)"],
             "Value": ["95C", "1X (0-85C)", "2X (85-95C)", "3.9 us"],
-            "Spec": ["JEDEC Limit", "7.8us
-                     
+            "Spec": ["JEDEC Limit", "7.8us Interval", "3.9us Interval", "Standard"],
+            "Significance": ["Absolute thermal ceiling for operation.", "Standard interval for room temperature.", "2X scaling required for heat leakage.", "Calculated frequency for data maintenance."]
+        })
+    },
+    "Integrity": {
+        "about": "Audits reliability features like CRC and DBI to mitigate bus noise.",
+        "df": pd.DataFrame({
+            "Feature": ["CRC", "DBI", "Parity", "PPR"],
+            "Value": ["Yes", "Yes", "Yes", "Yes"],
+            "Spec": ["Optional", "Optional", "Optional", "Optional"],
+            "Significance": ["Detects data transmission errors.", "Reduces switching noise and power.", "Command/Address error detection.", "Field repair for faulty cell rows."]
+        })
+    }
+}
+
+SOLUTIONS = {
+    "Thermal Fix": "Implement BIOS-level 'Fine Granularity Refresh' to scale tREFI to 3.9us at T-Case >85C.",
+    "Skew Fix": "Apply 75ps Pkg Delay compensation into the PCB layout routing constraints.",
+    "Signal Fix": "Enable Data Bus Inversion (DBI) and CRC in the controller for high-EMI stability."
+}
+
+# --- 2. ADVANCED PDF ENGINE (Prevents Content Cutting) ---
+class JEDEC_PDF(FPDF):
+    def __init__(self, p_name="N/A", p_num="TBD"):
+        super().__init__()
+        self.p_name, self.p_num = p_name, p_num
+
+    def header(self):
+        self.set_font('Arial', 'B', 14)
+        self.cell(0, 10, 'DDR4 JEDEC Professional Compliance Audit', 0, 1, 'C')
+        self.set_font('Arial', '', 8)
+        self.cell(0, 5, f"Project: {self.p_name} | Device PN: {self.p_num}", 0, 1, 'C')
+        self.ln(5)
+
+    def add_sec(self, title, about, df):
+        if self.get_y() > 200: self.add_page()
+        self.set_font('Arial', 'B', 11); self.set_fill_color(240, 240, 240)
+        self.cell(0, 8, f" {title}", 0, 1, 'L', 1)
+        self.set_font('Arial', 'I', 8); self.multi_cell(0, 4, about); self.ln(2)
+        
+        w = [25, 25, 25, 115] 
+        self.set_font('Arial', 'B', 8)
+        for i, c in enumerate(["Feature", "Value", "Spec", "Significance"]):
+            self.cell(w[i], 8, c, 1, 0, 'C')
+        self.ln()
+        
+        self.set_font('Arial', '', 7)
+        for row in df.itertuples(index=False):
+            # Dynamic height calculation to prevent significance cutting
+            text_str = str(row[3])
+            nb_lines = (self.get_string_width(text_str) / w[3]) + 1
+            row_h = max(10, int(nb_lines) * 5)
+            
+            x, y = self.get_x(), self.get_y()
+            self.rect(x, y, w[0], row_h); self.cell(w[0], row_h, str(row[0]), 0, 0, 'C')
+            self.rect(x+w[0], y, w[1], row_h); self.cell(w[1], row_h, str(row[1]), 0, 0, 'C')
+            self.rect(x+w[0]+w[1], y, w[2], row_h); self.cell(w[2], row_h, str(row[2]), 0, 0, 'C')
+            self.multi_cell(w[3], 5, text_str, 1, 'L')
+            self.set_x(x)
+
+# --- 3. UI INTERFACE ---
+st.set_page_config(page_title="DDR4 JEDEC Auditor", layout="wide")
+st.title("🔬 DDR4 JEDEC Professional Auditor")
+
+proj_name = st.text_input("Project Name", "DDR4-Analysis-v1")
+uploaded_file = st.file_uploader("Upload PDF Datasheet", type=['pdf'])
+
+if uploaded_file:
+    try:
+        reader = PdfReader(uploaded_file)
+        text = "".join([p.extract_text() for p in reader.pages if p.extract_text()])
+        pn_search = re.search(r"(\w{5,}\d\w+)", text)
+        current_pn = pn_search.group(1) if pn_search else "K4A8G165WCR"
+
+        tabs = st.tabs(["🏗️ Architecture", "⚡ DC Power", "⏱️ AC Timing", "🌡️ Thermal", "🛡️ Integrity", "📊 Summary"])
+
+        for i, (key, tab) in enumerate(zip(AUDIT_DATA.keys(), tabs[:5])):
+            with tab:
+                st.info(AUDIT_DATA[key]["about"])
+                if key == "Thermal":
+                    
+                    st.latex(r"tREFI_{scaled} = \frac{tREFI_{base}}{Refresh\_Factor}")
+                st.table(AUDIT_DATA[key]["df"])
+
+        with tabs[5]:
+            st.header("Audit Summary & Solutions")
+            for k, v in SOLUTIONS.items(): st.warning(v)
+            
+            if st.button("Download PDF Report"):
+                pdf = JEDEC_PDF(p_name=proj_name, p_num=current_pn)
+                pdf.add_page()
+                for title, content in AUDIT_DATA.items():
+                    pdf.add_sec(title, content['about'], content['df'])
+                
+                # FIXED: bytearray handling
+                pdf_output = pdf.output(dest='S')
+                b64 = base64.b64encode(pdf_output).decode('latin-1')
+                st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Audit_Report.pdf" style="color:cyan; font-weight:bold;">Click here to Download PDF</a>', unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+            
