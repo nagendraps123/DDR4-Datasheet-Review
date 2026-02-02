@@ -1,183 +1,285 @@
 import streamlit as st
-import pdfplumber
-import re
-import pandas as pd
 
-# ---------------- PAGE CONFIG ----------------
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
 st.set_page_config(
-    page_title="DDR4 Datasheet Review Tool",
+    page_title="JEDEC DDR4 Gatekeeper",
     layout="wide"
 )
 
-# ---------------- HEADER ----------------
-st.title("📘 DDR4 Datasheet Review Tool")
+st.title("🛡️ JEDEC DDR4 Gatekeeper")
 st.caption(
-    "Upload a DDR4 datasheet PDF and review critical electrical, timing, thermal, "
-    "and reliability parameters with engineering interpretation."
+    "Educational + Compliance + Debug reference tool for DDR4 systems "
+    "(JEDEC JESD79-4 aligned)"
 )
 
-st.markdown(
-    "[JEDEC DDR4 Standard (JESD79-4)](https://www.jedec.org/standards-documents/docs/jesd79-4)"
-)
-
-st.divider()
-
-# ---------------- FILE UPLOAD ----------------
-uploaded_file = st.file_uploader(
-    "📤 Upload DDR4 Datasheet (PDF only)",
-    type=["pdf"]
-)
-
-if not uploaded_file:
-    st.info("⬆️ Please upload a DDR4 datasheet to start the review.")
-    st.stop()
-
-# ---------------- PDF TEXT EXTRACTION ----------------
-pages_text = []
-
-with pdfplumber.open(uploaded_file) as pdf:
-    for i, page in enumerate(pdf.pages):
-        text = page.extract_text()
-        if text:
-            pages_text.append((i + 1, text))
-
-full_text = "\n".join([t for _, t in pages_text])
-
-# Helper function
-def find_param(pattern):
-    for page_no, text in pages_text:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(), page_no
-    return "Not found", None
-
-# ---------------- PARAM EXTRACTION ----------------
-params = {
-    "DDR Clock Frequency": find_param(r"\b\d{3,4}\s*MHz\b"),
-    "CAS Latency (CL)": find_param(r"CL\s*=\s*\d+"),
-    "tRCD": find_param(r"tRCD\s*=\s*\d+"),
-    "tRP": find_param(r"tRP\s*=\s*\d+"),
-    "Refresh Interval (tREFI)": find_param(r"tREFI\s*=\s*\d+"),
-    "Operating Temperature": find_param(r"-?\d+\s*°?C\s*to\s*\+?\d+\s*°?C"),
-}
-
-# ---------------- TABS ----------------
+# --------------------------------------------------
+# TAB LAYOUT
+# --------------------------------------------------
 tabs = st.tabs([
-    "🕒 Timing Parameters",
-    "⏱ Refresh Behavior",
-    "📊 Bandwidth Impact",
-    "🌡 Thermal Limits",
-    "🧾 Final Review Summary"
+    "1️⃣ DDR Fundamentals",
+    "2️⃣ Addressing & Architecture",
+    "3️⃣ Timing Parameters",
+    "4️⃣ DDR4 Training",
+    "5️⃣ Power Management States",
+    "6️⃣ Signal Integrity",
+    "7️⃣ Refresh & Retention",
+    "8️⃣ Thermal & Reliability",
+    "9️⃣ Failure Modes & Debug",
+    "🔟 DDR3 vs DDR4 vs DDR5",
+    "1️⃣1️⃣ JEDEC vs Datasheet",
+    "1️⃣2️⃣ Log & Remediation"
 ])
 
-# ---------------- TAB 1: TIMING ----------------
+# --------------------------------------------------
+# TAB 1 – DDR FUNDAMENTALS
+# --------------------------------------------------
 with tabs[0]:
-    st.subheader("🕒 DDR4 Timing Parameters")
+    st.header("DDR Fundamentals – How DDR4 Works")
 
     st.markdown("""
-**Why this matters:**  
-Timing parameters define how fast memory operations occur.  
-Aggressive timing → higher performance, but **lower margin**.
-""")
+    **DDR (Double Data Rate)** transfers data on **both rising and falling clock edges**.
+    DDR4 builds on this by increasing speed while reducing voltage and margins.
+    """)
 
-    timing_df = pd.DataFrame([
-        {"Parameter": "CAS Latency (CL)", "Extracted Value": params["CAS Latency (CL)"][0], "Page": params["CAS Latency (CL)"][1]},
-        {"Parameter": "tRCD", "Extracted Value": params["tRCD"][0], "Page": params["tRCD"][1]},
-        {"Parameter": "tRP", "Extracted Value": params["tRP"][0], "Page": params["tRP"][1]},
+    st.subheader("Basic Command Flow")
+    st.markdown("""
+    ```
+    PRE → ACT → READ / WRITE → PRE → REFRESH
+    ```
+
+    - **ACT** opens a row
+    - **READ/WRITE** accesses columns
+    - **PRE** closes the row
+    - **REFRESH** preserves stored charge
+    """)
+
+    st.info(
+        "Why this matters: DDR4 timing parameters only make sense "
+        "when the command sequence is clearly understood."
+    )
+
+# --------------------------------------------------
+# TAB 2 – ADDRESSING & ARCHITECTURE
+# --------------------------------------------------
+with tabs[1]:
+    st.header("Addressing & Architecture")
+
+    st.markdown("""
+    DDR4 introduces **Bank Groups**, which directly impact performance and timing penalties.
+    """)
+
+    st.table([
+        {"Item": "Bank Groups", "DDR4 Value": 4, "Why it matters": "Enables parallelism"},
+        {"Item": "Banks per Group", "DDR4 Value": 4, "Why it matters": "Scheduling efficiency"},
+        {"Item": "Row Addressing", "DDR4 Value": "15–16 bits", "Why it matters": "Density scaling"},
+        {"Item": "Column Addressing", "DDR4 Value": "10 bits", "Why it matters": "Burst access"},
     ])
 
-    st.dataframe(timing_df, use_container_width=True)
-
-    st.markdown("""
-**Engineering interpretation:**
-- CL, tRCD, tRP must align with **memory controller capability**
-- Lower values increase risk at high temperature & voltage corners
-""")
-
-# ---------------- TAB 2: REFRESH ----------------
-with tabs[1]:
-    st.subheader("⏱ DDR4 Refresh Behavior")
-
-    st.markdown("""
-**Why this matters:**  
-DDR4 refresh directly impacts **data retention** and **effective bandwidth**.
-""")
-
-    st.write(
-        f"**tREFI:** {params['Refresh Interval (tREFI)'][0]} "
-        f"(Page {params['Refresh Interval (tREFI)'][1]})"
+    st.info(
+        "Why this matters: Poor bank-group awareness in controllers causes "
+        "hidden latency penalties (tCCD_L)."
     )
 
-    st.markdown("""
-**Key risks:**
-- High temperature → refresh must increase
-- Double refresh reduces usable bandwidth
-""")
-
-# ---------------- TAB 3: BANDWIDTH ----------------
+# --------------------------------------------------
+# TAB 3 – TIMING PARAMETERS
+# --------------------------------------------------
 with tabs[2]:
-    st.subheader("📊 Bandwidth Loss Due to Refresh")
+    st.header("Timing Parameters – Categorized View")
 
     st.markdown("""
-**Scenario analysis (typical):**
-- Normal refresh: ~1–2% bandwidth loss
-- Double refresh (high temp): **3–5% loss**
-""")
+    DDR4 timings are best understood by **function**, not memorization.
+    """)
 
-    st.warning("""
-⚠ If controller does not compensate timing,
-system throughput degradation may be visible in:
-- Wi-Fi routing
-- Video buffering
-- Cache-heavy workloads
-""")
+    st.table([
+        {"Category": "Access", "Examples": "tAA, tRCD, tRP", "Purpose": "Read latency"},
+        {"Category": "Activation", "Examples": "tRAS, tRC", "Purpose": "Row lifecycle"},
+        {"Category": "Power Integrity", "Examples": "tRRD, tFAW", "Purpose": "IR drop control"},
+        {"Category": "Bus Turnaround", "Examples": "tWTR, tRTW", "Purpose": "DQ contention"},
+        {"Category": "Refresh", "Examples": "tRFC, tREFI", "Purpose": "Data retention"},
+    ])
 
-# ---------------- TAB 4: THERMAL ----------------
-with tabs[3]:
-    st.subheader("🌡 Thermal Limits & Implications")
-
-    st.write(
-        f"**Operating Temperature Range:** {params['Operating Temperature'][0]} "
-        f"(Page {params['Operating Temperature'][1]})"
+    st.info(
+        "Why this matters: Violating one timing often impacts others. "
+        "Categorization exposes systemic risk."
     )
 
+# --------------------------------------------------
+# TAB 4 – DDR4 TRAINING
+# --------------------------------------------------
+with tabs[3]:
+    st.header("DDR4 Training – Mandatory Calibration")
+
     st.markdown("""
-**Why thermal limits are critical:**
-- Above 85°C → DDR4 requires higher refresh rate
-- Extended temp parts (95–105°C) must be explicitly rated
-""")
+    DDR4 **cannot operate reliably without training** due to tight margins.
+    """)
 
-    st.error("""
-❗ If datasheet does not clearly state extended temperature behavior,
-risk of silent data corruption exists.
-""")
+    st.table([
+        {"Training Stage": "Write Leveling", "Purpose": "Align CK to DQS", "Failure Symptom": "No boot"},
+        {"Training Stage": "Read DQS Gate", "Purpose": "Capture window", "Failure Symptom": "Random reads"},
+        {"Training Stage": "VrefDQ Training", "Purpose": "Voltage centering", "Failure Symptom": "Pattern fails"},
+    ])
 
-# ---------------- FINAL SUMMARY ----------------
+    st.info(
+        "Why this matters: Many DDR4 field failures pass JEDEC timing "
+        "but fail due to marginal training."
+    )
+
+# --------------------------------------------------
+# TAB 5 – POWER MANAGEMENT
+# --------------------------------------------------
 with tabs[4]:
-    st.subheader("🧾 DDR4 Datasheet Review Summary")
+    st.header("Power Management States")
+
+    st.table([
+        {"State": "Active", "Description": "Normal operation", "Exit Latency": "None"},
+        {"State": "Power-Down", "Description": "Clock gated", "Exit Latency": "Short"},
+        {"State": "Self-Refresh", "Description": "DRAM controls refresh", "Exit Latency": "Long"},
+    ])
+
+    st.info(
+        "Why this matters: Aggressive power saving can introduce "
+        "latency spikes and refresh side effects."
+    )
+
+# --------------------------------------------------
+# TAB 6 – SIGNAL INTEGRITY
+# --------------------------------------------------
+with tabs[5]:
+    st.header("Signal Integrity – Beyond Eye Diagrams")
+
+    st.table([
+        {"Issue": "Jitter", "Effect": "Horizontal eye closure"},
+        {"Issue": "Noise", "Effect": "Vertical eye closure"},
+        {"Issue": "Skew", "Effect": "Eye shift"},
+        {"Issue": "Vref error", "Effect": "Asymmetric margin"},
+    ])
 
     st.markdown("""
-### ✔ Findings
-- Core DDR4 timing parameters identified from datasheet
-- Refresh behavior partially specified
-- Thermal operating range extracted
+    **Conceptual Eye Representation**
+    ```
+    Good:      ()
+    Marginal:  )(
+    Closed:    ||
+    ```
+    """)
 
-### ⚠ Risks Identified
-1. Missing clarity on **high-temperature refresh behavior**
-2. No explicit bandwidth degradation guidance
-3. Timing margins not correlated with temperature
+    st.info(
+        "Why this matters: DDR4 may pass training even when margins are dangerously low."
+    )
 
-### 🛠 Proposed Engineering Actions
-- Validate timing at **worst-case temperature**
-- Enforce controller-side refresh compensation
-- Request vendor clarification on:
-  - Double refresh impact
-  - Extended temperature guarantees
+# --------------------------------------------------
+# TAB 7 – REFRESH & RETENTION
+# --------------------------------------------------
+with tabs[6]:
+    st.header("Refresh & Retention")
 
-### ✅ Review Verdict
-**Conditionally acceptable**, pending:
-- Thermal stress validation
-- Controller timing margin analysis
-""")
+    st.markdown("""
+    Refresh behavior changes with **density and temperature**.
+    """)
 
-    st.success("Datasheet review completed with actionable insights.")
+    st.table([
+        {"Condition": "≤ 85°C", "tREFI": "7.8 µs", "Impact": "Normal"},
+        {"Condition": "> 85°C", "tREFI": "3.9 µs", "Impact": "Bandwidth loss"},
+    ])
+
+    st.markdown("""
+    **Refresh Overhead Formula**
+    ```
+    Overhead (%) =
+    (tRFC × refreshes per second) × 100
+    ```
+    """)
+
+    st.info(
+        "Why this matters: At high temperature, refresh can consume "
+        "8–10% of memory bandwidth."
+    )
+
+# --------------------------------------------------
+# TAB 8 – THERMAL & RELIABILITY
+# --------------------------------------------------
+with tabs[7]:
+    st.header("Thermal & Reliability")
+
+    st.table([
+        {"Temperature Zone": "≤ 85°C", "Behavior": "Nominal"},
+        {"Temperature Zone": "85–95°C", "Behavior": "Increased refresh"},
+        {"Temperature Zone": "> 95°C", "Behavior": "Retention risk"},
+    ])
+
+    st.info(
+        "Why this matters: Passing timing at room temperature does not "
+        "guarantee data integrity in the field."
+    )
+
+# --------------------------------------------------
+# TAB 9 – FAILURE MODES
+# --------------------------------------------------
+with tabs[8]:
+    st.header("Failure Modes & Debug Guide")
+
+    st.table([
+        {"Symptom": "Random read errors", "Likely Cause": "Marginal Vref"},
+        {"Symptom": "Fails only hot", "Likely Cause": "Refresh / leakage"},
+        {"Symptom": "Cold boot failure", "Likely Cause": "Training issue"},
+        {"Symptom": "Pattern failures", "Likely Cause": "Signal integrity"},
+    ])
+
+    st.info(
+        "Why this matters: Mapping symptoms to root cause saves weeks of debug time."
+    )
+
+# --------------------------------------------------
+# TAB 10 – DDR GENERATION COMPARISON
+# --------------------------------------------------
+with tabs[9]:
+    st.header("DDR3 vs DDR4 vs DDR5")
+
+    st.table([
+        {"Feature": "Voltage", "DDR3": "1.5V", "DDR4": "1.2V", "DDR5": "1.1V"},
+        {"Feature": "Bank Groups", "DDR3": "No", "DDR4": "Yes", "DDR5": "Enhanced"},
+        {"Feature": "Training", "DDR3": "Minimal", "DDR4": "Required", "DDR5": "Mandatory"},
+        {"Feature": "PMIC", "DDR3": "No", "DDR4": "No", "DDR5": "Yes"},
+    ])
+
+# --------------------------------------------------
+# TAB 11 – JEDEC vs DATASHEET
+# --------------------------------------------------
+with tabs[10]:
+    st.header("JEDEC vs Datasheet Comparison")
+
+    st.markdown("""
+    This view compares **vendor datasheet claims** against
+    **JEDEC JESD79-4 requirements**.
+    """)
+
+    st.table([
+        {"Parameter": "tAA", "Datasheet": "14.06 ns", "JEDEC": "≤ 13.75 ns", "Status": "FAIL"},
+        {"Parameter": "tRCD", "Datasheet": "13.75 ns", "JEDEC": "≤ 13.75 ns", "Status": "PASS"},
+        {"Parameter": "VDD", "Datasheet": "1.2 V", "JEDEC": "1.2V ±0.06V", "Status": "PASS"},
+    ])
+
+    st.info(
+        "Why this matters: Datasheets may omit corner cases or derating conditions."
+    )
+
+# --------------------------------------------------
+# TAB 12 – LOG & REMEDIATION
+# --------------------------------------------------
+with tabs[11]:
+    st.header("Log & Remediation")
+
+    st.error("❌ tAA violation for DDR4-3200 bin")
+
+    st.markdown("""
+    **Recommended Actions**
+    - Reduce frequency to 2933 MT/s  
+    - Increase CAS latency (CL)  
+    - Re-evaluate training margins  
+    """)
+
+    st.success(
+        "Goal: Convert failures into controlled, system-level design decisions."
+    )
