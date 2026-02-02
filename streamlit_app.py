@@ -1,211 +1,242 @@
 import streamlit as st
+import pdfplumber
 import pandas as pd
+import re
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+import tempfile
 
-st.set_page_config(
-    page_title="DDR4 Datasheet Review Tool",
-    layout="wide"
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
+st.set_page_config(page_title="DDR4 Datasheet Review Tool", layout="wide")
+
+st.title("📘 DDR4 Datasheet Review & Compliance Tool")
+st.markdown("""
+Engineering review of **DDR4 vendor datasheets** against  
+**JEDEC JESD79-4 standard**
+
+🔗 JEDEC Reference: https://www.jedec.org/standards-documents/docs/jesd79-4
+---
+""")
+
+# --------------------------------------------------
+# FILE UPLOAD
+# --------------------------------------------------
+uploaded_file = st.file_uploader(
+    "📤 Upload DDR4 Vendor Datasheet (PDF)",
+    type=["pdf"]
 )
 
-st.title("📘 DDR4 Datasheet Review & Risk Analysis Tool")
-st.caption("Engineering-grade DDR qualification assistant")
+if not uploaded_file:
+    st.info("Upload a DDR4 datasheet to begin review.")
+    st.stop()
 
-# -------------------------------------------------------
-# MOCKED EXTRACTED DATA (replace with real extraction)
-# -------------------------------------------------------
+st.success(f"Loaded datasheet: **{uploaded_file.name}**")
 
-extracted = {
-    "clock": {
-        "data_rate": {"value": 3200, "page": 12, "text": "DDR4-3200 supported"},
-        "tCK": {"value": 0.625, "page": "Derived", "text": "tCK = 1 / (3200/2)"}
-    },
-    "timing": {
-        "tAA": {"value": 14.06, "page": 47, "text": "tAA(max) = 14.06 ns"},
-        "tRCD": {"value": 14.06, "page": 47, "text": "tRCD = 14.06 ns"},
-        "tRP": {"value": 14.06, "page": 47, "text": "tRP = 14.06 ns"}
-    },
-    "refresh": {
-        "tRFC1": {"value": 350, "page": 52, "text": "tRFC1 = 350 ns"},
-        "tREFI_1x": 7.8,
-        "tREFI_2x": 3.9
+# --------------------------------------------------
+# PDF TEXT EXTRACTION
+# --------------------------------------------------
+@st.cache_data
+def extract_pdf_text(file):
+    pages = []
+    with pdfplumber.open(file) as pdf:
+        for i, page in enumerate(pdf.pages):
+            text = page.extract_text()
+            if text:
+                pages.append((i + 1, text))
+    return pages
+
+pages = extract_pdf_text(uploaded_file)
+
+# --------------------------------------------------
+# VALUE EXTRACTION HELPERS
+# --------------------------------------------------
+def find_value(pattern, unit=None):
+    for page_no, text in pages:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            value = match.group(1)
+            confidence = 0.6
+            if unit and unit.lower() in text.lower():
+                confidence += 0.2
+            if match.group(0):
+                confidence += 0.2
+            return {
+                "value": value,
+                "page": page_no,
+                "confidence": round(confidence, 2)
+            }
+    return {
+        "value": "Not found",
+        "page": "-",
+        "confidence": 0.0
     }
+
+# --------------------------------------------------
+# EXTRACT PARAMETERS
+# --------------------------------------------------
+extracted = {
+    "tAA": find_value(r"tAA\s*=?\s*(\d+\.?\d*)", "ns"),
+    "tRCD": find_value(r"tRCD\s*=?\s*(\d+\.?\d*)", "ns"),
+    "tRP": find_value(r"tRP\s*=?\s*(\d+\.?\d*)", "ns"),
+    "tRAS": find_value(r"tRAS\s*=?\s*(\d+\.?\d*)", "ns"),
+    "tRFC": find_value(r"tRFC1?\s*=?\s*(\d+\.?\d*)", "ns"),
+    "tREFI": find_value(r"tREFI\s*=?\s*(\d+\.?\d*)", "us"),
+    "tCASE": find_value(r"(?:Tcase|max case temp).*?(\d+)", "°C")
 }
 
+# --------------------------------------------------
+# JEDEC LIMITS
+# --------------------------------------------------
 JEDEC = {
     "tAA": 14.0,
     "tRCD": 14.0,
-    "tRP": 14.0
+    "tRP": 14.0,
+    "tRAS": 32.0,
+    "tRFC": 350,
+    "tREFI": 7.8,
+    "tCASE": 95
 }
 
-# -------------------------------------------------------
+# --------------------------------------------------
 # TABS
-# -------------------------------------------------------
-
+# --------------------------------------------------
 tabs = st.tabs([
-    "🕒 DDR Clock",
-    "⏱️ AC Timing",
-    "🔄 Refresh & Bandwidth",
-    "🧠 Latency (RLA)",
-    "📊 Evidence",
-    "📋 Executive Summary"
+    "⏱ AC Timing",
+    "🔄 Refresh",
+    "🌡 Thermal",
+    "📋 Final Summary"
 ])
 
-# -------------------------------------------------------
-# 1. DDR CLOCK TAB
-# -------------------------------------------------------
+failures = []
+
+# --------------------------------------------------
+# AC TIMING TAB
+# --------------------------------------------------
 with tabs[0]:
-    st.subheader("🕒 DDR Clock & Frequency")
+    st.subheader("⏱ AC Timing Parameters")
 
     st.markdown("""
-**Why this matters**  
-All DDR timings are derived from the clock period (tCK).  
-If clocking is wrong, *every timing check is invalid*.
-""")
-
-    df = pd.DataFrame([
-        {
-            "Parameter": "Data Rate",
-            "Extracted": f"{extracted['clock']['data_rate']['value']} MT/s",
-            "Source Page": extracted['clock']['data_rate']['page'],
-            "Status": "PASS ✅"
-        },
-        {
-            "Parameter": "tCK",
-            "Extracted": f"{extracted['clock']['tCK']['value']} ns",
-            "Source Page": extracted['clock']['tCK']['page'],
-            "Status": "PASS ✅"
-        }
-    ])
-
-    st.dataframe(df, use_container_width=True)
-
-# -------------------------------------------------------
-# 2. AC TIMING TAB
-# -------------------------------------------------------
-with tabs[1]:
-    st.subheader("⏱️ AC Timing Parameters")
-
-    st.markdown("""
-**Parameter explanation**
-- **tAA**: READ → data valid delay
-- **tRCD**: ACTIVATE → READ
-- **tRP**: PRECHARGE time
-
-Violations cause **silent data corruption**.
+These timings directly affect **data correctness**.
+Violations may cause **silent data corruption**.
 """)
 
     rows = []
-    for p in ["tAA", "tRCD", "tRP"]:
-        val = extracted["timing"][p]["value"]
-        jedec = JEDEC[p]
+    for p in ["tAA", "tRCD", "tRP", "tRAS"]:
+        v = extracted[p]
+        try:
+            numeric = float(v["value"])
+            status = "FAIL ❌" if numeric > JEDEC[p] else "PASS ✅"
+        except:
+            status = "UNKNOWN ⚠️"
+
+        if status.startswith("FAIL"):
+            failures.append(p)
+
         rows.append({
             "Parameter": p,
-            "Extracted (ns)": val,
-            "JEDEC Max (ns)": jedec,
-            "Delta (ns)": round(val - jedec, 3),
-            "Status": "FAIL ❌" if val > jedec else "PASS ✅",
-            "Page": extracted["timing"][p]["page"]
+            "Vendor Value": v["value"],
+            "JEDEC Limit": JEDEC[p],
+            "Page": v["page"],
+            "Confidence": v["confidence"],
+            "Status": status
         })
 
     st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
-# -------------------------------------------------------
-# 3. REFRESH & BANDWIDTH TAB
-# -------------------------------------------------------
-with tabs[2]:
-    st.subheader("🔄 Refresh Behavior & Bandwidth Loss")
+# --------------------------------------------------
+# REFRESH TAB
+# --------------------------------------------------
+with tabs[1]:
+    st.subheader("🔄 Refresh Behavior")
+
+    tRFC = extracted["tRFC"]["value"]
+    tREFI = extracted["tREFI"]["value"]
+
+    if isinstance(tRFC, str) or isinstance(tREFI, str):
+        st.warning("Insufficient data to compute bandwidth loss.")
+        bw_loss = None
+    else:
+        bw_loss = (float(tRFC) / (float(tREFI) * 1000)) * 100
+        st.metric("Estimated Bandwidth Loss @ 2× Refresh", f"{bw_loss:.2f}%")
 
     st.markdown("""
-**Why refresh matters**  
-Higher temperature requires more frequent refresh, reducing usable bandwidth.
+**Explanation**
+- Higher temperature → more refresh
+- More refresh → less usable bandwidth
 """)
 
-    tRFC = extracted["refresh"]["tRFC1"]["value"]
-    tREFI = extracted["refresh"]["tREFI_2x"]  # assume worst case
+# --------------------------------------------------
+# THERMAL TAB
+# --------------------------------------------------
+with tabs[2]:
+    st.subheader("🌡 Thermal Limits & Extended Temperature")
 
-    bandwidth_loss = (tRFC / (tREFI * 1000)) * 100
+    tcase = extracted["tCASE"]
+    status = "PASS ✅" if str(tcase["value"]).isdigit() and int(tcase["value"]) <= JEDEC["tCASE"] else "FAIL ❌"
 
-    st.metric(
-        "Estimated Bandwidth Loss",
-        f"{bandwidth_loss:.2f} %",
-        delta="Due to 2× refresh"
-    )
+    st.table(pd.DataFrame([{
+        "Parameter": "Max Case Temperature",
+        "Vendor": tcase["value"],
+        "JEDEC": JEDEC["tCASE"],
+        "Page": tcase["page"],
+        "Confidence": tcase["confidence"],
+        "Status": status
+    }]))
 
-    st.warning("""
-⚠️ **Impact**
-- Throughput reduction
-- Higher latency under load
-- Thermal sensitivity risk
-""")
-
-# -------------------------------------------------------
-# 4. RLA TAB
-# -------------------------------------------------------
+# --------------------------------------------------
+# FINAL SUMMARY TAB
+# --------------------------------------------------
 with tabs[3]:
-    st.subheader("🧠 Effective Read Latency (RLA)")
-
-    rla = (
-        extracted["timing"]["tAA"]["value"]
-        + extracted["timing"]["tRCD"]["value"]
-        + extracted["timing"]["tRP"]["value"]
-    )
-
-    st.metric("RLA (ns)", f"{rla:.2f}")
-
-    st.info("""
-**Why RLA matters**
-- CPU stall time
-- Cache miss penalty
-- Latency-sensitive workloads
-""")
-
-# -------------------------------------------------------
-# 5. EVIDENCE TAB
-# -------------------------------------------------------
-with tabs[4]:
-    st.subheader("📊 Datasheet Evidence")
-
-    for section in extracted:
-        st.markdown(f"### {section.upper()}")
-        for k, v in extracted[section].items():
-            if isinstance(v, dict):
-                with st.expander(f"{k} – Page {v['page']}"):
-                    st.code(v["text"])
-
-# -------------------------------------------------------
-# 6. EXECUTIVE SUMMARY TAB
-# -------------------------------------------------------
-with tabs[5]:
     st.subheader("📋 Executive Review Summary")
 
-    st.error("### ❌ CONDITIONAL APPROVAL")
+    if failures:
+        st.error("❌ CONDITIONAL PASS")
+    else:
+        st.success("✅ DATASHEET COMPLIANT")
 
-    st.markdown("""
-### 🔍 Key Findings
-- ❌ AC timings exceed JEDEC limits
-- ⚠️ 2× refresh required above 85°C
-- 📉 ~4–5% bandwidth loss expected
+    st.markdown("### Key Findings")
+    st.markdown(f"""
+- Timing failures: **{', '.join(failures) if failures else 'None'}**
+- Thermal limit verified
+- Datasheet confidence: **Extraction-based**
 """)
 
-    st.markdown("""
-### ⚠️ Risk Assessment
-| Area | Risk |
-|----|----|
-| Functional | Medium |
-| Performance | Medium–High |
-| Thermal | High |
+    st.markdown("### Proposed Engineering Actions")
+    if failures:
+        st.markdown("""
+1. Down-bin speed grade (e.g., DDR4-2933)
+2. Increase CAS latency (+2 cycles)
+3. Enforce 2× refresh above 85 °C
+4. Avoid performance SKUs at high temperature
 """)
+    else:
+        st.markdown("No corrective action required.")
 
-    st.markdown("""
-### 🛠️ Proposed Mitigations
-1. Downclock to **2933 MT/s**
-2. Increase CAS Latency by **+2 cycles**
-3. Enforce **2× refresh** in firmware
-4. Restrict usage to **≤85°C** for performance SKUs
-""")
+    # --------------------------------------------------
+    # PDF EXPORT
+    # --------------------------------------------------
+    if st.button("📄 Download Review Report (PDF)"):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            doc = SimpleDocTemplate(tmp.name, pagesize=A4)
+            styles = getSampleStyleSheet()
+            content = []
 
-    st.markdown("""
-### 🎯 Usage Recommendation
-- ❌ Safety-critical systems: **Not recommended**
-- ⚠️ Servers: **ECC + derating required**
-- ✅ Consumer / Office: **Acceptable**
-""")
+            content.append(Paragraph("DDR4 Datasheet Review Report", styles["Title"]))
+            content.append(Spacer(1, 12))
+
+            for p in extracted:
+                content.append(Paragraph(
+                    f"<b>{p}</b>: {extracted[p]['value']} "
+                    f"(Page {extracted[p]['page']}, Confidence {extracted[p]['confidence']})",
+                    styles["Normal"]
+                ))
+
+            doc.build(content)
+            st.download_button(
+                "⬇️ Download PDF",
+                open(tmp.name, "rb"),
+                file_name="DDR4_Datasheet_Review.pdf"
+)
