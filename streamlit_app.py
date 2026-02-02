@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from PyPDF2 import PdfReader
 from fpdf import FPDF
 from datetime import datetime
 
@@ -23,35 +22,14 @@ class DRAM_Report(FPDF):
 # --- 2. GLOBAL AUDIT DATA ---
 AUDIT_SECTIONS = {
     "1. Physical Architecture": {
-        "intro": "Validates silicon-to-ball delays and bank group configurations.",
+        "intro": "Validates the silicon-to-package interface and signal path matching (Pkg Delay) to ensure timing skew remains within JEDEC boundaries.",
         "df": pd.DataFrame({
             "Feature": ["Density", "Package", "Bank Groups", "Pkg Delay"],
             "Value": ["8Gb (512Mx16)", "96-FBGA", "2 Groups", "75 ps"],
-            "Spec": ["Standard", "Standard", "x16 Type", "100ps Max"],
-            "Significance": ["Addressable space", "Physical footprint", "Interleaving", "Internal delay"]
-        })
-    },
-    "2. DC Power": {
-        "intro": "Audits voltage rail tolerances (VDD, VPP) to prevent bit-flips.",
-        "df": pd.DataFrame({
-            "Feature": ["VDD", "VPP", "VMAX", "IDD6N"],
-            "Value": ["1.20V", "2.50V", "1.50V", "22 mA"],
-            "Spec": ["1.26V Max", "2.75V Max", "1.50V Max", "30mA Max"],
-            "Significance": ["Core stability", "Wordline boost", "Safety rating", "Refresh current"]
-        })
-    },
-    "3. Timing Parameters": {
-        "intro": "Analyzes critical clock cycles and data strobe latencies.",
-        "df": pd.DataFrame({
-            "Feature": ["tCK (avg)", "tCL", "tRCD", "tRP"],
-            "Value": ["0.938 ns", "16 cycles", "16 cycles", "16 cycles"],
-            "Spec": ["0.937ns Min", "CL=16", "tRCD=16", "tRP=16"],
-            "Significance": ["Clock frequency", "Read latency", "RAS-CAS delay", "Precharge"]
-        })
-    },
-    "4. Thermal & Environmental": {
-        "intro": "Reviews operating temperature ranges and refresh scaling.",
-        "df": pd.DataFrame({
-            "Feature": ["T-Oper", "T-Storage", "Refresh Rate", "Thermal Sensor"],
-            "Value": ["0 to 95 C
-                      
+            "Spec": ["JESD79-4 Compliant", "Standard", "x16 Type", "100ps Max"],
+            "Significance": [
+                "Address mapping; affects Row/Column/Bank bit-ordering for controller addressing.",
+                "Ball pitch and layout; dictates the escape routing and PCB impedance control requirements.",
+                "Enables Bank Group (BG) interleaving to satisfy tCCD_S timing constraints for high bandwidth.",
+                "Silicon-to-package trace length; exceeding 100ps breaks signal fly-by topology synchronicity."
+            ]
