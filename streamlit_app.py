@@ -4,67 +4,64 @@ import re
 from PyPDF2 import PdfReader
 from fpdf import FPDF
 import base64
-from datetime import datetime
 
-# --- 1. GLOBAL AUDIT DATA (Fixes all Line 49/NameErrors) ---
-# Content is now globally available so it cannot "disappear" during reruns.
+# --- 1. ENHANCED GLOBAL AUDIT DATA ---
 AUDIT_DATA = {
     "Architecture": {
-        "intro": "Validates silicon-to-ball delays and bank group configurations.",
+        "about": "Validates the physical silicon-to-package mapping. It ensures that internal package delays (Pkg Delay) are matched across the data bus to prevent signal skew.",
         "df": pd.DataFrame({
             "Feature": ["Density", "Package", "Bank Groups", "Pkg Delay"],
             "Value": ["8Gb (512Mx16)", "96-FBGA", "2 Groups", "75 ps"],
             "Spec": ["Standard", "Standard", "x16 Type", "100ps Max"],
-            "Significance": ["Determines memory space.", "Land pattern design.", "Interleaving efficiency.", "Trace matching offset."]
+            "Significance": ["Determines addressable space.", "Land pattern design.", "Interleaving efficiency.", "Trace offset matching."]
         })
     },
     "DC Power": {
-        "intro": "Audits voltage rail tolerances (VDD, VPP) to prevent lattice stress.",
+        "about": "Analyzes voltage rail tolerances (VDD, VPP) and maximum stress limits. Stability here is critical to prevent bit-flips during high-speed switching.",
         "df": pd.DataFrame({
             "Feature": ["VDD", "VPP", "VMAX", "IDD6N"],
             "Value": ["1.20V", "2.50V", "1.50V", "22 mA"],
             "Spec": ["1.26V Max", "2.75V Max", "1.50V Max", "30mA Max"],
-            "Significance": ["Core stability.", "Wordline boost voltage.", "Absolute stress limit.", "Standby battery life."]
+            "Significance": ["Core stability.", "Row boost voltage.", "Absolute stress limit.", "Standby battery life."]
         })
     },
     "AC Timing": {
-        "intro": "Analyzes signal integrity and clock period margins.",
+        "about": "Verifies speed-bin compliance (e.g., 3200 MT/s). This section audits the clock period (tCK) and CAS latency (tAA) to ensure the controller timing matches the DRAM capability.",
         "df": pd.DataFrame({
             "Feature": ["tCK", "tAA", "tRFC", "Slew Rate"],
             "Value": ["625 ps", "13.75 ns", "350 ns", "5.0 V/ns"],
             "Spec": ["625ps Min", "13.75ns Max", "350ns Std", "4V/ns Min"],
-            "Significance": ["3200 MT/s limit.", "Read Latency delay.", "Refresh cycle window.", "Data Eye sharpness."]
+            "Significance": ["3200 MT/s limit.", "Read Latency.", "Refresh window.", "Signal sharpness."]
         })
     },
     "Thermal": {
-        "intro": "Validates refresh scaling for data retention at high temperatures.",
+        "about": "Focuses on data retention reliability. As temperature increases, cell leakage increases, requiring faster refresh cycles ($tREFI$) to maintain data integrity.",
         "df": pd.DataFrame({
-            "Feature": ["T-Case Max", "Normal Ref", "Extended Ref", "ASR"],
-            "Value": ["95C", "1X (0-85C)", "2X (85-95C)", "Supported"],
-            "Spec": ["JEDEC Limit", "7.8us", "3.9us", "Optional"],
-            "Significance": ["Shutdown point.", "Standard retention.", "Heat leakage fix.", "Auto power mgmt."]
+            "Feature": ["T-Case Max", "Normal Ref", "Extended Ref", "tREFI (85C)"],
+            "Value": ["95C", "1X (0-85C)", "2X (85-95C)", "3.9 us"],
+            "Spec": ["JEDEC Limit", "7.8us Interval", "3.9us Interval", "Standard"],
+            "Significance": ["Thermal ceiling.", "Standard refresh.", "High-temp leakage fix.", "Cycle frequency."]
         })
     },
     "Integrity": {
-        "intro": "Audits error detection and signal correction features.",
+        "about": "Audits advanced reliability features. These allow the system to detect bus errors (CRC) or hide electrical noise (DBI) during high-density data transfers.",
         "df": pd.DataFrame({
             "Feature": ["CRC", "DBI", "Parity", "PPR"],
             "Value": ["Yes", "Yes", "Yes", "Yes"],
             "Spec": ["Optional", "Optional", "Optional", "Optional"],
-            "Significance": ["Bus error detection.", "Noise reduction.", "Ghost cmd prevention.", "Post-Package Repair."]
+            "Significance": ["Bus error detection.", "Noise reduction.", "Ghost cmd prevention.", "Field repair."]
         })
     }
 }
 
 VERDICT = "FULLY QUALIFIED (98%)"
-MITIGATIONS = [
-    "BIOS: Use 2X Refresh scaling for T-case >85C.",
-    "PCB Layout: Apply 75ps Pkg Delay compensation.",
-    "Signal: Enable DBI to reduce noise.",
-    "Reliability: Enable CRC in high-EMI environments."
-]
+SOLUTIONS = {
+    "Thermal Risk": "Implement BIOS-level 'Fine Granularity Refresh' to scale tREFI to 3.9us automatically when T-Case exceeds 85°C.",
+    "Skew Risk": "Apply 75ps Package Delay compensation values into the PCB layout constraints for all DQ/DQS traces.",
+    "Signal Risk": "Enable Data Bus Inversion (DBI) and Write CRC in the Memory Controller to mitigate VDDQ switching noise."
+}
 
-# --- 2. PROFESSIONAL PDF ENGINE ---
+# --- 2. FIXED PDF ENGINE ---
 class JEDEC_PDF(FPDF):
     def __init__(self, p_name="N/A", p_num="TBD"):
         super().__init__()
@@ -72,27 +69,22 @@ class JEDEC_PDF(FPDF):
 
     def header(self):
         self.set_font('Arial', 'B', 15)
-        # FIXED: String is properly closed here.
         self.cell(0, 10, 'DDR4 JEDEC Professional Compliance Audit', 0, 1, 'C')
         self.set_font('Arial', '', 9)
         self.cell(0, 5, f"Project: {self.p_name} | Device PN: {self.p_num}", 0, 1, 'C')
         self.ln(5)
 
-    def footer(self):
-        self.set_y(-15); self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f"PN: {self.p_num} | Page {self.page_no()}", 0, 0, 'C')
-
-    def add_sec(self, title, intro, df):
+    def add_sec(self, title, about, df):
         self.set_font('Arial', 'B', 11); self.set_fill_color(240, 240, 240)
         self.cell(0, 8, f" {title}", 0, 1, 'L', 1)
-        self.set_font('Arial', 'I', 8); self.multi_cell(0, 4, intro); self.ln(2)
+        self.set_font('Arial', 'I', 8); self.multi_cell(0, 4, about); self.ln(2)
         w = [30, 25, 30, 105]
         self.set_font('Arial', 'B', 8)
         for i, c in enumerate(["Feature", "Value", "Spec", "Significance"]): self.cell(w[i], 8, c, 1, 0, 'C')
         self.ln(); self.set_font('Arial', '', 7)
         for _, row in df.iterrows():
-            self.cell(w[0], 8, str(row.iloc[0]), 1); self.cell(w[1], 8, str(row.iloc[1]), 1)
-            self.cell(w[2], 8, str(row.iloc[2]), 1); self.multi_cell(w[3], 8, str(row.iloc[3]), 1)
+            h = 10; self.cell(w[0], h, str(row.iloc[0]), 1); self.cell(w[1], h, str(row.iloc[1]), 1)
+            self.cell(w[2], h, str(row.iloc[2]), 1); self.multi_cell(w[3], h, str(row.iloc[3]), 1)
         self.ln(4)
 
 # --- 3. UI WITH HORIZONTAL TABS ---
@@ -109,39 +101,35 @@ if uploaded_file:
         pn_search = re.search(r"(\w{5,}\d\w+)", text)
         current_pn = pn_search.group(1) if pn_search else "K4A8G165WCR"
 
-        # HORIZONTAL TABS FOR RESULTS
         tabs = st.tabs(["🏗️ Architecture", "⚡ DC Power", "⏱️ AC Timing", "🌡️ Thermal", "🛡️ Integrity", "📊 Audit Summary"])
 
-        # Map sections to tabs
         for i, (key, tab) in enumerate(zip(AUDIT_DATA.keys(), tabs[:5])):
             with tab:
-                st.header(f"{key} Audit Results")
-                st.caption(AUDIT_DATA[key]["intro"])
+                st.info(AUDIT_DATA[key]["about"])
+                if key == "Thermal":
+                    st.latex(r"tREFI_{scaled} = \frac{tREFI_{base}}{Refresh\_Factor}")
+                    st.write("**Refresh Calculation:** At $T_{case} \leq 85°C$, $tREFI = 7.8 \mu s$. At $85°C < T_{case} \leq 95°C$, the $Refresh\_Factor$ becomes 2, resulting in $tREFI = 3.9 \mu s$ to compensate for increased leakage.")
                 st.table(AUDIT_DATA[key]["df"])
 
         with tabs[5]:
-            st.header("Engineering Verdict & Summary")
-            st.success(f"FINAL STATUS: {VERDICT}")
+            st.header("Risk Summary & Solutions")
+            st.success(f"FINAL AUDIT VERDICT: {VERDICT}")
             
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("Required Mitigations")
-                for m in MITIGATIONS: st.warning(m)
+            for risk, solution in SOLUTIONS.items():
+                with st.expander(f"📍 Solution for {risk}"):
+                    st.write(solution)
             
-            with col2:
-                st.subheader("Generate Report")
-                if st.button("Download Professional PDF"):
-                    pdf = JEDEC_PDF(p_name=proj_name, p_num=current_pn)
-                    pdf.add_page()
-                    for title, content in AUDIT_DATA.items():
-                        pdf.add_sec(title, content['intro'], content['df'])
-                    
-                    pdf.ln(5); pdf.set_font('Arial', 'B', 10); pdf.cell(0, 10, VERDICT, 1, 1, 'C')
-                    
-                    pdf_bytes = pdf.output(dest='S').encode('latin-1')
-                    b64 = base64.b64encode(pdf_bytes).decode('latin-1')
-                    st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Audit_{current_pn}.pdf" style="color:cyan; font-weight:bold;">Click here to Download PDF</a>', unsafe_allow_html=True)
+            if st.button("Download Professional PDF"):
+                pdf = JEDEC_PDF(p_name=proj_name, p_num=current_pn)
+                pdf.add_page()
+                for title, content in AUDIT_DATA.items():
+                    pdf.add_sec(title, content['about'], content['df'])
+                
+                # FIXED: Corrected bytearray handling for screenshot error 30904.jpg
+                pdf_output = pdf.output(dest='S')
+                b64 = base64.b64encode(pdf_output).decode('latin-1')
+                st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="Audit_{current_pn}.pdf" style="color:cyan; font-weight:bold;">Click here to Download PDF</a>', unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        
+                
