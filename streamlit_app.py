@@ -3,6 +3,7 @@ import pandas as pd
 from fpdf import FPDF
 from datetime import datetime
 import re
+from PyPDF2 import PdfReader
 
 # --- PDF CLASS ---
 class DRAM_Report(FPDF):
@@ -74,104 +75,104 @@ def thermal_refresh_calc(temp_c):
     else:
         return "Out of JEDEC operating range"
 
-# --- AUDIT DATA (example subset, expand as needed) ---
-AUDIT_SECTIONS = {
-    "1. Physical Architecture": {
-        "intro": "Validates silicon-to-package interface and signal path matching.",
-        "df": pd.DataFrame({
-            "Feature": ["Density", "Package", "Bank Groups", "tDQSCK"],
-            "Value": ["8Gb (512Mx16)", "96-FBGA", "4 Groups", "100 ps"],
-            "Spec": ["JESD79-4 Compliant", "Standard", "x16 Type", "≤125 ps"],
-            "Significance": ["Address mapping", "Ball pitch/layout", "Bank Group interleaving", "DQS-DQ skew"]
-        })
-    },
-    "2. DC Power": {
-        "intro": "Analyzes electrical rails against JEDEC DC specifications.",
-        "df": pd.DataFrame({
-            "Feature": ["VDD", "VPP", "Absolute Max VDD", "IDD6N"],
-            "Value": ["1.20V", "2.50V", "1.50V", "22 mA"],
-            "Spec": ["1.14V - 1.26V", "2.375V - 2.625V", "1.50V Max", "30mA Max"],
-            "Significance": ["Core supply", "Wordline boost", "Absolute max rating", "Self-refresh current"]
-        })
-    },
-    "3. Timing Parameters": {
-        "intro": "Critical AC timing audit per JEDEC speed bin.",
-        "df": pd.DataFrame({
-            "Feature": ["tCK (avg)", "tCL", "tRCD", "tRP", "tRAS", "tFAW"],
-            "Value": ["0.938 ns", "16 cycles", "16 cycles", "16 cycles", "35 ns", "30 ns"],
-            "Spec": ["0.937ns Min", "CL=16", "tRCD=16", "tRP=16", "≥35 ns", "30 ns"],
-            "Significance": ["Clock period", "CAS latency", "RAS-CAS delay", "Precharge", "Row active time", "Four-bank activation window"]
-        })
-    },
-    "4. Thermal & Environmental": {
-        "intro": "Evaluates operating/storage ranges and refresh scaling.",
-        "df": pd.DataFrame({
-            "Feature": ["T-Oper", "T-Storage", "tREFI (<85°C)", "tREFI (>85°C)"],
-            "Value": ["0 to 95 °C", "-55 to 125 °C", "7.8 µs", "3.9 µs"],
-            "Spec": ["JEDEC JESD79-4", "JEDEC JESD79-4", "7.8 µs", "3.9 µs"],
-            "Significance": ["Operating range", "Storage range", "Nominal refresh", "High-temp refresh"]
-        })
-    },
-    "5. Command & Address": {
-        "intro": "Verifies CA parity, CRC, DBI compliance.",
-        "df": pd.DataFrame({
-            "Feature": ["CA Parity", "CRC (Write)", "DBI", "ACT_n Command"],
-            "Value": ["Enabled", "Enabled", "Enabled", "Supported"],
-            "Spec": ["Required", "Required", "Optional", "Required"],
-            "Significance": ["Error detection", "Data integrity", "Signal integrity", "DDR4-specific command"]
-        })
+# --- PDF Extraction ---
+def extract_ddr4_params(uploaded_file):
+    reader = PdfReader(uploaded_file)
+    text = ""
+    for page in reader.pages:
+        if page.extract_text():
+            text += page.extract_text()
+
+    params = {}
+    patterns = {
+        "Density": r"(\d+Gb|\d+Mb).*x\d+",
+        "Package": r"(FBGA|BGA|CSP).*",
+        "Bank Groups": r"Bank Groups.*?(\d+)",
+        "VDD": r"VDD.*?(\d\.\d+V)",
+        "VPP": r"VPP.*?(\d\.\d+V)",
+        "Absolute Max VDD": r"Absolute Max.*?(\d\.\d+V)",
+        "IDD6N": r"IDD6N.*?(\d+ mA)",
+        "tCK": r"tCK.*?(\d+\.\d+ ns)",
+        "tCL": r"CL.*?(\d+ cycles)",
+        "tRCD": r"tRCD.*?(\d+ cycles)",
+        "tRP": r"tRP.*?(\d+ cycles)",
+        "tRAS": r"tRAS.*?(\d+ ns)",
+        "tFAW": r"tFAW.*?(\d+ ns)",
+        "Toper": r"Operating Temperature.*?(\d+ ?to ?\d+ ?°C)",
+        "Tstorage": r"Storage Temperature.*?(\-?\d+ ?to ?\d+ ?°C)",
+        "tREFI": r"tREFI.*?(\d+\.\d+ µs)",
+        "CA Parity": r"CA Parity.*?(Enabled|Disabled)",
+        "CRC": r"CRC.*?(Enabled|Disabled)",
+        "DBI": r"DBI.*?(Enabled|Disabled)",
+        "ACT_n": r"ACT_n.*?(Supported|Not Supported)"
     }
-}
+
+    for key, pattern in patterns.items():
+        m = re.search(pattern, text, re.IGNORECASE)
+        params[key] = m.group(1) if m else "Not Found"
+
+    return params
 
 # --- STREAMLIT APP ---
-st.title("DDR4 Compliance Audit Tool")
-st.markdown("### Reference: [JEDEC DDR4 Standard JESD79-4](https://www.jedec.org/standards-documents/docs/jesd79-4)")
+st.title("DDR4 Datasheet Compliance Audit Tool")
 
-part_number = st.text_input("Enter Part Number:", "ABC123")
+st.markdown("""
+This tool helps engineers and managers review DDR4 datasheets against
+JEDEC JESD79-4 specifications.
 
-# Display sections
-for section, content in AUDIT_SECTIONS.items():
-    with st.expander(section, expanded=True):
-        st.write(content["intro"])
-        df = content["df"]
+**Workflow:**
+1. Upload the vendor's DDR4 datasheet (PDF).
+2. The tool extracts key parameters automatically.
+3. Each section is cross-checked against JEDEC limits.
+4. A verdict (PASS/FAIL) is generated with JEDEC references.
+5. Download a professional PDF report with embedded JEDEC link.
 
-        def highlight(row):
-            return ['background-color: #ffcccc' if not check_compliance(str(row["Value"]), str(row["Spec"])) else '' for _ in row]
+Reference: [JEDEC DDR4 Standard JESD79-4](https://www.jedec.org/standards-documents/docs/jesd79-4)
+""")
 
-        st.dataframe(df.style.apply(highlight, axis=1))
-        st.download_button("Download Section CSV", df.to_csv(index=False), file_name=f"{section.replace(' ','_')}.csv")
+uploaded_file = st.file_uploader("Upload DDR4 Datasheet (PDF)", type=["pdf"])
+part_number = st.text_input("Enter Part Number:", "Unknown-Part")
 
-# Thermal refresh calculator
-temp_input = st.number_input("Enter Operating Temp (°C):", 0, 125, 25)
-st.write("Refresh Requirement:", thermal_refresh_calc(temp_input))
+if uploaded_file:
+    extracted = extract_ddr4_params(uploaded_file)
 
-# Verdict
-overall_verdict, section_results, issues = compute_verdict(AUDIT_SECTIONS)
-st.subheader("Final Audit Verdict")
-for sec, res in section_results.items():
-    st.write(f"{'✔' if res=='PASS' else '❌'} {sec}: {res}")
-st.write(f"**Overall Verdict: {overall_verdict}**")
-if issues:
-    st.write("Issues found:")
-    for i in issues:
-        st.write(f"- {i}")
-
-# PDF Generation
-if st.button("Generate PDF Report"):
-    pdf = DRAM_Report(part_number=part_number, logo_path=None)
-    pdf.add_page()
-
-    for section, content in AUDIT_SECTIONS.items():
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, section, ln=True)
-        pdf.set_font("Arial", '', 10)
-        pdf.multi_cell(0, 10, content["intro"])
-        pdf.ln(2)
-
-        df = content["df"]
-        pdf.set_font("Arial", '', 9)
-        col_widths = [40, 40, 40, 70]
-        headers = ["Feature", "Value", "Spec", "Significance"]
-
-        # Table header
-        for i, h in enumerate
+    # Build dynamic audit sections
+    AUDIT_SECTIONS = {
+        "1. Physical Architecture": {
+            "intro": "Validates silicon-to-package interface.",
+            "df": pd.DataFrame({
+                "Feature": ["Density", "Package", "Bank Groups"],
+                "Value": [extracted["Density"], extracted["Package"], extracted["Bank Groups"]],
+                "Spec": ["JEDEC JESD79-4 Compliant", "Standard FBGA", "4 Groups (x16 devices)"],
+                "Significance": ["Defines address mapping", "Package impacts routing", "Bank group interleaving"]
+            })
+        },
+        "2. DC Power": {
+            "intro": "Analyzes electrical rails.",
+            "df": pd.DataFrame({
+                "Feature": ["VDD", "VPP", "Absolute Max VDD", "IDD6N"],
+                "Value": [extracted["VDD"], extracted["VPP"], extracted["Absolute Max VDD"], extracted["IDD6N"]],
+                "Spec": ["1.14V - 1.26V", "2.375V - 2.625V", "1.50V Max", "30mA Max"],
+                "Significance": ["Core supply", "Wordline boost", "Absolute max rating", "Self-refresh current"]
+            })
+        },
+        "3. Timing Parameters": {
+            "intro": "Critical AC timing audit.",
+            "df": pd.DataFrame({
+                "Feature": ["tCK", "tCL", "tRCD", "tRP", "tRAS", "tFAW"],
+                "Value": [extracted["tCK"], extracted["tCL"], extracted["tRCD"], extracted["tRP"], extracted["tRAS"], extracted["tFAW"]],
+                "Spec": ["0.937ns Min", "CL=16", "tRCD=16", "tRP=16", "≥35 ns", "30 ns"],
+                "Significance": ["Clock period", "CAS latency", "RAS-CAS delay", "Precharge", "Row active time", "Four-bank activation window"]
+            })
+        },
+        "4. Thermal & Environmental": {
+            "intro": "Evaluates operating/storage ranges and refresh scaling.",
+            "df": pd.DataFrame({
+                "Feature": ["T-Oper", "T-Storage", "tREFI"],
+                "Value": [extracted["Toper"], extracted["Tstorage"], extracted["tREFI"]],
+                "Spec": ["0-95°C", "-55-125°C", "7.8µs / 3.9µs"],
+                "Significance": ["Operating range", "Storage range", "Refresh interval"]
+            })
+        },
+        "5. Command & Address": {
+            "intro": "Verifies CA parity, CRC,
