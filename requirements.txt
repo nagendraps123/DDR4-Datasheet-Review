@@ -1,4 +1,5 @@
 streamlit
 pandas
-pdfplumber
 fpdf2
+pdfplumber
+xlsxwriter
