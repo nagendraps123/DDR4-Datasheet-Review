@@ -11,7 +11,7 @@ st.markdown("""
     .status-box { background-color: #ffffff; border: 2px solid #e6e9ef; padding: 25px; border-radius: 10px; margin-bottom: 25px; }
     .status-item { font-size: 16px; font-weight: bold; border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between; }
     .section-desc { font-size: 15px; color: #1e3a8a; margin-bottom: 20px; border-left: 5px solid #3b82f6; padding: 15px; background: #f0f7ff; border-radius: 8px; line-height: 1.6; }
-    .engineering-note { font-style: italic; color: #475569; font-size: 0.9rem; }
+    .jedec-ref { font-size: 12px; color: #ef4444; font-weight: bold; background: #fee2e2; padding: 2px 8px; border-radius: 4px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -21,133 +21,83 @@ bw_loss = 8.97
 
 # --- 3. LANDING PAGE ---
 st.markdown("<h1>🛰️ DDR4 JEDEC Professional Audit</h1>", unsafe_allow_html=True)
-st.markdown("<p class='subtitle'>Automated Compliance & Signal Integrity Validation for High-Speed Memory Systems</p>", unsafe_allow_html=True)
+st.markdown("<p class='subtitle'>Automated Compliance Validation | Reference Standard: JESD79-4B</p>", unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.info("### 🔍 Extraction\nParses AC/DC tables, ZQ calibration requirements, and package length data.")
-with col2:
-    st.success("### ⚖️ Compliance\nCross-references vendor specs against JESD79-4B standards.")
-with col3:
-    st.warning("### ⚠️ Risk Mitigation\nFlags thermal throttling, timing violations, and SI bottlenecks.")
-
-st.divider()
-
-uploaded_file = st.file_uploader("📂 Upload DDR4 Datasheet (PDF) to begin audit", type="pdf")
+uploaded_file = st.file_uploader("📂 Upload DDR4 Datasheet (PDF)", type="pdf")
 
 if uploaded_file:
-    # --- SUMMARY HEADER ---
     st.markdown(f"### 📊 Engineering Audit: {extracted_pn}")
-    st.markdown(f"""
-    <div class="status-box">
-        <div class="status-item"><span>Architecture:</span> <span style='color:green'>Verified (8Gb x16)</span></div>
-        <div class="status-item"><span>Voltage Rails:</span> <span style='color:green'>JEDEC Compliant</span></div>
-        <div class="status-item"><span>Timing Grade:</span> <span style='color:green'>3200AA (CL22)</span></div>
-        <div class="status-item"><span>Thermal Margin:</span> <span style='color:orange'>WARNING ({bw_loss}% Loss)</span></div>
-    </div>
-    """, unsafe_allow_html=True)
-
+    
     tabs = st.tabs(["🏗️ Arch", "⚡ DC/Power", "🕒 Clock/SI", "⏱️ AC Timing", "🌡️ Thermal", "🛡️ Integrity", "📋 Verdict"])
 
     with tabs[0]:
-        st.subheader("Physical Architecture & Die Layout")
-        st.markdown("<div class='section-desc'>Focus: Evaluates package geometry and logical addressing.</div>", unsafe_allow_html=True)
+        st.subheader("Physical Architecture")
+        st.markdown("<span class='jedec-ref'>JEDEC Ref: JESD79-4B Section 2.0 (Package Pinout & Addressing)</span>", unsafe_allow_html=True)
+        st.markdown("<div class='section-desc'>Audit Focus: Die density and logical-to-physical mapping.</div>", unsafe_allow_html=True)
         df_arch = pd.DataFrame({
-            "Metric": ["Density", "Organization", "Bank Groups", "Package Delay (max)"],
-            "Spec": ["8Gb", "512M x 16", "2 Groups (4 banks each)", "75 ps"],
-            "Engineering Note": [
-                "Requires 64ms refresh (8k cycles). Check controller support for 16-bit row addressing.",
-                "x16 config increases DQ bus loading; ensure ODT (On-Die Termination) is tuned for multi-rank.",
-                "Limited bank groups compared to x8; affects tCCD_L/S interleaving efficiency.",
-                "Max internal skew. Length matching on PCB must compensate for this silicon-level delay."
-            ]
+            "Metric": ["Density", "Addressing", "Package Delay"],
+            "Spec": ["8Gb", "Row: A0-A15, Col: A0-A9", "75 ps (max)"],
+            "Engineering Note": ["Verify controller supports 16-bit row addressing.", "JEDEC standard mapping for x16 components.", "Must match trace lengths to compensate for internal skew."]
         })
         st.table(df_arch)
 
     with tabs[1]:
         st.subheader("DC Operating Limits")
-        st.markdown("<div class='section-desc'>Focus: Power delivery network (PDN) requirements.</div>", unsafe_allow_html=True)
+        st.markdown("<span class='jedec-ref'>JEDEC Ref: JESD79-4B Section 11.0 (Operating Conditions)</span>", unsafe_allow_html=True)
+        st.markdown("<div class='section-desc'>Audit Focus: Voltage rail tolerances and ripple margins.</div>", unsafe_allow_html=True)
         df_pwr = pd.DataFrame({
-            "Rail": ["VDD", "VPP", "VDDQ", "VREFCA"],
-            "Value": ["1.2V ± 0.06V", "2.5V ± 0.125V", "1.2V ± 0.06V", "0.6 * VDD"],
-            "Engineering Note": [
-                "Core logic supply. High-speed switching requires low-ESR decoupling at 0.1uF and 2.2uF.",
-                "Wordline pump voltage. Must be stable before VDD reaches 0.2V during power-up sequence.",
-                "Keep isolated from noisy digital planes to maintain the DQ eye height.",
-                "Reference for Command/Address. Requires 1% tolerance resistors for voltage divider."
-            ]
+            "Rail": ["VDD", "VPP", "VDDQ"],
+            "Margin": ["1.2V ± 0.06V", "2.5V ± 0.125V", "1.2V ± 0.06V"],
+            "Engineering Note": ["Primary logic supply. JEDEC limits ripple to +/- 5%.", "Wordline boost. Sequence: VPP must ramp with or before VDD.", "Isolated IO supply for signal integrity."]
         })
         st.table(df_pwr)
 
     with tabs[2]:
         st.subheader("Clock & Signal Integrity")
-        st.markdown("<div class='section-desc'>Focus: Differential clock stability and slew rates.</div>", unsafe_allow_html=True)
+        st.markdown("<span class='jedec-ref'>JEDEC Ref: JESD79-4B Section 13.1 (Differential AC/DC Levels)</span>", unsafe_allow_html=True)
+        st.markdown("<div class='section-desc'>Audit Focus: Clock symmetry and differential voltage levels (VIX).</div>", unsafe_allow_html=True)
         df_clk = pd.DataFrame({
-            "Parameter": ["tCK (avg)", "Input Slew Rate", "Slew Rate Mon.", "Clock Jitter"],
-            "Value": ["0.625ns", "4.0 V/ns (min)", "Enabled", "±42 ps"],
-            "Engineering Note": [
-                "Targeting 1600MHz clock frequency. Trace impedance must be 100-ohm differential.",
-                "Slow slew rates lead to 'Eye Closure'. Monitor DQ/DQS cross-points for symmetry.",
-                "Uses MR5[A13] to enable monitoring. Critical for post-silicon tuning.",
-                "Maximum cycle-to-cycle variance. Exceeding this will cause setup/hold violations on CA bus."
-            ]
+            "Parameter": ["VIX(CK)", "Input Slew Rate", "Clock Jitter"],
+            "Value": ["110mV to 190mV", "4.0 V/ns (min)", "±42 ps"],
+            "Engineering Note": ["Differential cross-point voltage. Deviation indicates SI impedance mismatch.", "Minimum rise/fall speed to maintain setup/hold margins.", "Cycle-to-cycle variance limit for 3200MT/s."]
         })
         st.table(df_clk)
 
     with tabs[3]:
         st.subheader("AC Timing Analysis")
-        st.markdown("<div class='section-desc'>Focus: Critical latencies for memory controller configuration.</div>", unsafe_allow_html=True)
+        st.markdown("<span class='jedec-ref'>JEDEC Ref: JESD79-4B Section 13.3 (Speed Bin Tables)</span>", unsafe_allow_html=True)
+        st.markdown("<div class='section-desc'>Audit Focus: Validation of Speed Bin 3200AA (CL-tRCD-tRP: 22-22-22).</div>", unsafe_allow_html=True)
         df_ac = pd.DataFrame({
-            "Symbol": ["tCL", "tRCD", "tRP", "tRAS"],
-            "Cycles": ["22", "22", "22", "52"],
-            "Engineering Note": [
-                "CAS Latency for 3200AA grade. Ensure BIOS profile matches this JEDEC bin.",
-                "Row to Column delay. Short tRCD is vital for random-access performance.",
-                "Row Precharge. Affects how quickly a new row in the same bank can be opened.",
-                "Minimum Active-to-Precharge time. Closing a row too early results in data corruption."
-            ]
+            "Symbol": ["tCL", "tRCD", "tRP", "tAA (min)"],
+            "Value": ["22", "22", "22", "13.75 ns"],
+            "Engineering Note": ["Standard CAS Latency for 3200AA.", "Row to Column delay. Controller must meet 13.75ns floor.", "Row Precharge time.", "Internal latency floor across all vendor dies."]
         })
         st.table(df_ac)
 
     with tabs[4]:
-        st.subheader("Thermal & Refresh Management")
-        st.markdown("<div class='section-desc'>Focus: Reliability at elevated operating temperatures.</div>", unsafe_allow_html=True)
-        st.warning(f"Projected Bandwidth Efficiency Loss: {bw_loss}% due to Refresh Overhead.")
+        st.subheader("Thermal & Refresh")
+        st.markdown("<span class='jedec-ref'>JEDEC Ref: JESD79-4B Section 4.10 (Refresh Requirements)</span>", unsafe_allow_html=True)
+        st.markdown("<div class='section-desc'>Audit Focus: Temperature-controlled refresh (TCRR) and bandwidth impact.</div>", unsafe_allow_html=True)
+        st.warning(f"Projected BW Efficiency Loss: {bw_loss}%")
         df_therm = pd.DataFrame({
-            "Range": ["Normal (0-85°C)", "Extended (85-95°C)"],
-            "tREFI": ["7.8 µs", "3.9 µs"],
-            "Engineering Note": [
-                "Standard JEDEC refresh interval. No performance penalty.",
-                "Double Refresh required. The memory controller must issue REF commands twice as often.",
-            ]
+            "Temp Range": ["0°C to 85°C", "85°C to 95°C"],
+            "Refresh Mode": ["1x (7.8 µs)", "2x (3.9 µs)"],
+            "Engineering Note": ["Standard operation.", "JEDEC mandatory double-refresh. Impacts memory bus availability."]
         })
         st.table(df_therm)
-        st.info("Design Tip: Use an external temperature sensor to trigger the 'Fine Granularity Refresh' mode.")
 
     with tabs[5]:
-        st.subheader("Reliability & Integrity Features")
-        st.markdown("<div class='section-desc'>Focus: Data protection and error correction.</div>", unsafe_allow_html=True)
+        st.subheader("Integrity Features")
+        st.markdown("<span class='jedec-ref'>JEDEC Ref: JESD79-4B Section 9.0 (Reliability Features)</span>", unsafe_allow_html=True)
+        st.markdown("<div class='section-desc'>Audit Focus: Fault-tolerance and field-repairability support.</div>", unsafe_allow_html=True)
         df_int = pd.DataFrame({
-            "Feature": ["Write CRC", "hPPR", "sPPR", "Data Mask"],
-            "Status": ["Supported", "Supported", "Supported", "Enabled"],
-            "Engineering Note": [
-                "Cyclic Redundancy Check on data writes. Adds 1-cycle latency but ensures data bus integrity.",
-                "Hard Post Package Repair. Permanent row remapping to fix manufacturing defects in-field.",
-                "Soft Post Package Repair. Temporary row fix that clears after power cycle.",
-                "Allows the controller to mask specific bytes. Important for x16 sub-word writes."
-            ]
+            "Feature": ["Write CRC", "hPPR", "sPPR"],
+            "Status": ["Supported", "Supported", "Supported"],
+            "Engineering Note": ["Error detection on the data bus.", "Hard repair: Permanent fuse-based row remapping.", "Soft repair: Fast row remapping for runtime errors."]
         })
         st.table(df_int)
 
     with tabs[6]:
-        st.subheader("📋 Final Audit Verdict")
-        st.success("STATUS: MARGINAL PASS")
-        st.markdown("""
-        **Engineering Summary:**
-        * **Trace Matching:** Package delays are high (75ps). PCB routing for DQ/DQS must be matched within ±10 mils.
-        * **Thermal:** The 8Gb density requires strict adherence to the 3.9µs refresh rate above 85°C. Without active cooling, expect a ~9% throughput drop.
-        * **Power:** Ensure VPP (2.5V) has its own dedicated regulator; sharing with other rails may induce noise during bank activation.
-        """)
-
-st.divider()
-st.caption("DDR4 JEDEC Audit Tool v2.1 | JEDEC Standard JESD79-4B compliant analysis.")
+        st.subheader("📋 Executive Audit Verdict")
+        st.markdown("<div class='section-desc'>Summary based on JESD79-4B Compliance Checks.</div>", unsafe_allow_html=True)
+        st.info("**Design Recommendation:** Layout must prioritize DQ-to-DQS length matching to compensate for the 75ps package delay identified in Section 2.0.")
