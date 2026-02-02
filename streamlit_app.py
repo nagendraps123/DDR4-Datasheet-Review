@@ -2,14 +2,21 @@ import streamlit as st
 import pandas as pd
 from fpdf import FPDF
 from datetime import datetime
+import re
 
-# --- 1. PDF CLASS WITH HEADER/FOOTER ---
+# --- PDF CLASS ---
 class DRAM_Report(FPDF):
-    def __init__(self, part_number):
+    def __init__(self, part_number, logo_path=None):
         super().__init__()
         self.part_number = part_number
+        self.logo_path = logo_path
 
     def header(self):
+        if self.logo_path:
+            try:
+                self.image(self.logo_path, 10, 8, 20)
+            except:
+                pass
         self.set_font("Arial", 'B', 10)
         self.cell(0, 10, f"DDR Compliance Audit | Part No: {self.part_number}", 0, 1, 'R')
         self.line(10, 18, 200, 18)
@@ -19,94 +26,139 @@ class DRAM_Report(FPDF):
         self.set_font("Arial", 'I', 8)
         self.cell(0, 10, f"Page {self.page_no()} | Part Number: {self.part_number}", 0, 0, 'C')
 
-# --- 2. GLOBAL AUDIT DATA ---
+# --- COMPLIANCE CHECKING ---
+def normalize_value(val):
+    try:
+        return float(re.findall(r"[\d.]+", val)[0])
+    except:
+        return None
+
+def check_compliance(value, spec):
+    try:
+        val = normalize_value(value)
+        if "-" in spec:  # range
+            low, high = [normalize_value(x) for x in spec.split("-")]
+            return val is not None and low <= val <= high
+        elif "Max" in spec:
+            limit = normalize_value(spec)
+            return val is not None and val <= limit
+        elif "Min" in spec:
+            limit = normalize_value(spec)
+            return val is not None and val >= limit
+        elif "Required" in spec:
+            return value.strip().lower() == "enabled"
+        return True
+    except:
+        return True
+
+def compute_verdict(sections):
+    section_results = {}
+    issues = []
+    for section, content in sections.items():
+        df = content["df"]
+        section_pass = True
+        for _, row in df.iterrows():
+            if not check_compliance(str(row["Value"]), str(row["Spec"])):
+                section_pass = False
+                issues.append(f"{section}: {row['Feature']} ({row['Value']} vs {row['Spec']}) [JEDEC JESD79-4]")
+        section_results[section] = "PASS" if section_pass else "FAIL"
+    overall = "PASS" if all(r=="PASS" for r in section_results.values()) else "FAIL"
+    return overall, section_results, issues
+
+# --- THERMAL REFRESH CALCULATOR ---
+def thermal_refresh_calc(temp_c):
+    if temp_c <= 85:
+        return "tREFI = 7.8 µs (<85°C, JEDEC JESD79-4)"
+    elif temp_c <= 95:
+        return "tREFI = 3.9 µs (>85°C, JEDEC JESD79-4)"
+    else:
+        return "Out of JEDEC operating range"
+
+# --- AUDIT DATA (example subset, expand as needed) ---
 AUDIT_SECTIONS = {
     "1. Physical Architecture": {
-        "intro": "Validates the silicon-to-package interface and signal path matching (Pkg Delay) to ensure timing skew remains within JEDEC boundaries.",
+        "intro": "Validates silicon-to-package interface and signal path matching.",
         "df": pd.DataFrame({
-            "Feature": ["Density", "Package", "Bank Groups", "Pkg Delay"],
-            "Value": ["8Gb (512Mx16)", "96-FBGA", "2 Groups", "75 ps"],
-            "Spec": ["JESD79-4 Compliant", "Standard", "x16 Type", "100ps Max"],
-            "Significance": [
-                "Address mapping; affects Row/Column/Bank bit-ordering for controller addressing.",
-                "Ball pitch and layout; dictates the escape routing and PCB impedance control requirements.",
-                "Enables Bank Group (BG) interleaving to satisfy tCCD_S timing constraints for high bandwidth.",
-                "Silicon-to-package trace length; exceeding 100ps breaks signal fly-by topology synchronicity."
-            ]
+            "Feature": ["Density", "Package", "Bank Groups", "tDQSCK"],
+            "Value": ["8Gb (512Mx16)", "96-FBGA", "4 Groups", "100 ps"],
+            "Spec": ["JESD79-4 Compliant", "Standard", "x16 Type", "≤125 ps"],
+            "Significance": ["Address mapping", "Ball pitch/layout", "Bank Group interleaving", "DQS-DQ skew"]
         })
     },
     "2. DC Power": {
-        "intro": "Analyzes electrical rails to ensure the DUT operates within the safe operating area (SOA) defined by JEDEC DC specifications.",
+        "intro": "Analyzes electrical rails against JEDEC DC specifications.",
         "df": pd.DataFrame({
-            "Feature": ["VDD", "VPP", "VMAX", "IDD6N"],
+            "Feature": ["VDD", "VPP", "Absolute Max VDD", "IDD6N"],
             "Value": ["1.20V", "2.50V", "1.50V", "22 mA"],
-            "Spec": ["1.14V - 1.26V", "2.375V - 2.75V", "1.50V Max", "30mA Max"],
-            "Significance": [
-                "Core supply; rail noise exceeding +/- 60mV triggers internal logic state meta-stability.",
-                "Wordline boost supply; must remain above 2.375V to ensure overdrive of memory cell access transistors.",
-                "Absolute maximum rating; exceeding this point causes irreversible gate-oxide dielectric breakdown.",
-                "Self-refresh current; critical for verifying JEDEC IDD/IPP low-power standby compliance."
-            ]
+            "Spec": ["1.14V - 1.26V", "2.375V - 2.625V", "1.50V Max", "30mA Max"],
+            "Significance": ["Core supply", "Wordline boost", "Absolute max rating", "Self-refresh current"]
         })
     },
     "3. Timing Parameters": {
-        "intro": "Critical AC timing audit. These parameters define the window of validity for data strobes (DQS) and command signals.",
+        "intro": "Critical AC timing audit per JEDEC speed bin.",
         "df": pd.DataFrame({
-            "Feature": ["tCK (avg)", "tCL", "tRCD", "tRP"],
-            "Value": ["0.938 ns", "16 cycles", "16 cycles", "16 cycles"],
-            "Spec": ["0.937ns Min", "CL=16", "tRCD=16", "tRP=16"],
-            "Significance": [
-                "Average Clock Period; the fundamental frequency reference for all high-speed signaling (1066MHz).",
-                "CAS Latency; the delay from Read command to valid data burst; critical for memory controller scheduler.",
-                "RAS to CAS delay; timing required for row activation before sensing can occur.",
-                "Row Precharge; minimum time to close a bank to allow the bitlines to equalize for the next access."
-            ]
+            "Feature": ["tCK (avg)", "tCL", "tRCD", "tRP", "tRAS", "tFAW"],
+            "Value": ["0.938 ns", "16 cycles", "16 cycles", "16 cycles", "35 ns", "30 ns"],
+            "Spec": ["0.937ns Min", "CL=16", "tRCD=16", "tRP=16", "≥35 ns", "30 ns"],
+            "Significance": ["Clock period", "CAS latency", "RAS-CAS delay", "Precharge", "Row active time", "Four-bank activation window"]
         })
     },
     "4. Thermal & Environmental": {
-        "intro": "Evaluates the device's ability to maintain data integrity across the JEDEC industrial and commercial temperature grades.",
+        "intro": "Evaluates operating/storage ranges and refresh scaling.",
         "df": pd.DataFrame({
-            "Feature": ["T-Oper", "T-Storage", "Refresh Rate", "Thermal Sensor"],
-            "Value": ["0 to 95 C", "-55 to 100 C", "64ms @ <85C", "Integrated"],
-            "Spec": ["0 to 95 C", "Standard", "32ms @ >85C", "JESD21-C Compliant"],
-            "Significance": [
-                "Standard JEDEC operating range; T-Case above 95C accelerates electron leakage beyond refresh recovery.",
-                "Storage limits; defines the thermal budget before permanent silicon aging or data retention failure.",
-                "tREFI requirement; must be doubled (3.9us) at elevated temperatures to counter bitline charge decay.",
-                "Integrated Sensor; required for 'Thermal Throttling' and auto-adjustment of refresh cycles."
-            ]
+            "Feature": ["T-Oper", "T-Storage", "tREFI (<85°C)", "tREFI (>85°C)"],
+            "Value": ["0 to 95 °C", "-55 to 125 °C", "7.8 µs", "3.9 µs"],
+            "Spec": ["JEDEC JESD79-4", "JEDEC JESD79-4", "7.8 µs", "3.9 µs"],
+            "Significance": ["Operating range", "Storage range", "Nominal refresh", "High-temp refresh"]
         })
     },
     "5. Command & Address": {
-        "intro": "Verifies the command bus integrity protocols, including parity and retry logic to prevent system-level hangs.",
+        "intro": "Verifies CA parity, CRC, DBI compliance.",
         "df": pd.DataFrame({
-            "Feature": ["C/A Latency", "CA Parity", "CRC Error", "DBI"],
-            "Value": ["Disabled", "Enabled", "Auto-Retry", "Enabled"],
-            "Spec": ["Optional", "Required", "Required", "Optional"],
-            "Significance": [
-                "Command/Address latency; disabling reduces controller complexity but may impact timing closure.",
-                "Parity check on command/address bus; mandatory for JEDEC DDR4 to detect single-bit errors.",
-                "Cyclic Redundancy Check; ensures burst-level integrity and triggers auto-retry on failure.",
-                "Data Bus Inversion; reduces simultaneous switching noise by inverting high-density data patterns."
-            ]
+            "Feature": ["CA Parity", "CRC (Write)", "DBI", "ACT_n Command"],
+            "Value": ["Enabled", "Enabled", "Enabled", "Supported"],
+            "Spec": ["Required", "Required", "Optional", "Required"],
+            "Significance": ["Error detection", "Data integrity", "Signal integrity", "DDR4-specific command"]
         })
     }
 }
 
-# --- 3. STREAMLIT APP ---
-st.title("DDR Compliance Audit Report Generator")
+# --- STREAMLIT APP ---
+st.title("DDR4 Compliance Audit Tool")
+st.markdown("### Reference: [JEDEC DDR4 Standard JESD79-4](https://www.jedec.org/standards-documents/docs/jesd79-4)")
 
 part_number = st.text_input("Enter Part Number:", "ABC123")
 
-# Display sections interactively
+# Display sections
 for section, content in AUDIT_SECTIONS.items():
-    st.subheader(section)
-    st.write(content["intro"])
-    st.dataframe(content["df"])
+    with st.expander(section, expanded=True):
+        st.write(content["intro"])
+        df = content["df"]
 
-# Generate PDF
+        def highlight(row):
+            return ['background-color: #ffcccc' if not check_compliance(str(row["Value"]), str(row["Spec"])) else '' for _ in row]
+
+        st.dataframe(df.style.apply(highlight, axis=1))
+        st.download_button("Download Section CSV", df.to_csv(index=False), file_name=f"{section.replace(' ','_')}.csv")
+
+# Thermal refresh calculator
+temp_input = st.number_input("Enter Operating Temp (°C):", 0, 125, 25)
+st.write("Refresh Requirement:", thermal_refresh_calc(temp_input))
+
+# Verdict
+overall_verdict, section_results, issues = compute_verdict(AUDIT_SECTIONS)
+st.subheader("Final Audit Verdict")
+for sec, res in section_results.items():
+    st.write(f"{'✔' if res=='PASS' else '❌'} {sec}: {res}")
+st.write(f"**Overall Verdict: {overall_verdict}**")
+if issues:
+    st.write("Issues found:")
+    for i in issues:
+        st.write(f"- {i}")
+
+# PDF Generation
 if st.button("Generate PDF Report"):
-    pdf = DRAM_Report(part_number=part_number)
+    pdf = DRAM_Report(part_number=part_number, logo_path=None)
     pdf.add_page()
 
     for section, content in AUDIT_SECTIONS.items():
@@ -122,24 +174,4 @@ if st.button("Generate PDF Report"):
         headers = ["Feature", "Value", "Spec", "Significance"]
 
         # Table header
-        for i, h in enumerate(headers):
-            pdf.cell(col_widths[i], 8, h, 1)
-        pdf.ln()
-
-        # Table rows
-        for _, row in df.iterrows():
-            pdf.cell(col_widths[0], 8, str(row["Feature"]), 1)
-            pdf.cell(col_widths[1], 8, str(row["Value"]), 1)
-            pdf.cell(col_widths[2], 8, str(row["Spec"]), 1)
-            pdf.cell(col_widths[3], 8, str(row["Significance"]), 1)
-            pdf.ln()
-        pdf.ln(5)
-
-    # Save to bytes
-    pdf_bytes = pdf.output(dest='S').encode('latin-1')
-    st.download_button(
-        label="Download PDF",
-        data=pdf_bytes,
-        file_name=f"DDR_Audit_{part_number}_{datetime.now().strftime('%Y%m%d')}.pdf",
-        mime="application/pdf"
-    )
+        for i, h in enumerate
