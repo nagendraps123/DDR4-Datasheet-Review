@@ -254,40 +254,32 @@ if uploaded_file:
 
 
 
-    with tabs[6]: # SUMMARY & PDF
-
+    with tabs[6]: # SUMMARY & VERDICT
         st.subheader("📋 Executive Audit Verdict")
-
         summary_df = pd.DataFrame({
-
             "Audit Area": ["Architecture", "DC Power", "AC Performance", "Thermal Health"],
-
             "JEDEC Status": ["Verified", "Verified", "PASS (3200AA)", f"Warning ({bw_loss}% Loss)"],
-
             "Summary Verdict": ["Compliant", "Within 5% Tolerance", "Fully Verified", "Active Throttling"]
-
         })
-
         st.table(summary_df)
-
         
-
         st.divider()
-
-        st.markdown(f"**Compliance Target:** [Official JEDEC JESD79-4B Standard]({JEDEC_LINK})")
-
         
+        # --- REPLACED DOWNLOAD BUTTON WITH STATUS INFO ---
+        st.markdown(f"**Compliance Target:** [Official JEDEC JESD79-4B Standard]({JEDEC_LINK})")
+        
+        st.info("""
+        ### 📊 Audit Export Status
+        The automated PDF report generator is currently in development. 
+        **Manual Action:** Please use your browser's 'Print to PDF' function (Ctrl+P) to save this dashboard for your records.
+        """)
 
-        report_data = f"DDR4 SILICON AUDIT REPORT\nGenerated: {datetime.now()}\nVerdict: PASS (Conditional)\nThermal BW Loss: {bw_loss}%"
-
-        st.download_button(
-
-            label="📥 Download Comprehensive PDF Audit Report",
-
-            data=report_data,
-
-            file_name="DDR4_Sentinel_Audit_Report.pdf",
-
-            mime="application/pdf"
-
-        )
+        # Optional: Display the raw report data as text for transparency
+        with st.expander("View Raw Audit Metadata"):
+            st.code(f"""
+            DDR4 SILICON AUDIT REPORT
+            Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            Verdict: PASS (Conditional)
+            Thermal BW Loss: {bw_loss}%
+            Compliance: JESD79-4B
+            """)
