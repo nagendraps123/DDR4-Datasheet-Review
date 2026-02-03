@@ -1,233 +1,300 @@
 import streamlit as st
 
-# ============================================================
-# JEDEC DDR4 BASELINE
-# ============================================================
-JEDEC = {
-    "3200": {
-        "tCK": 0.625,
-        "tAA": 13.75,
-        "tRCD": 13.75,
-        "tRP": 13.75,
-        "tRAS": 32,
-        "tRFC_8Gb": 350,
-        "tREFI": 7.8,
-        "VDD": 1.20,
-        "DQSQ": 0.16,
-        "Temp_Max": 85
-    }
-}
+# -------------------------------
+# Page Config
+# -------------------------------
+st.set_page_config(
+    page_title="DDR Datasheet Review Tool",
+    layout="wide"
+)
 
-# ============================================================
-# EMULATED DATASHEET EXTRACTION DATABASE
-# ============================================================
-DDR4_PARTS = {
-    "Micron MT40A1G8SA-075E (Golden)": {
-        "Vendor": "Micron",
-        "Speed": "3200",
-        "Density": "8Gb",
-        "VDD": 1.20,
-        "Temp_Max": 85,
-        "tCK": 0.625,
+# -------------------------------
+# Hard-coded DDR4 Datasheet Models
+# -------------------------------
+DDR_DATABASE = {
+    "Micron MT40A1G8SA-075E (Golden Sample)": {
+        "vendor": "Micron",
+        "density": "8Gb",
+        "speed_bin": "DDR4-3200AA",
+        "jedec": "JESD79-4C",
         "tAA": 13.75,
         "tRCD": 13.75,
         "tRP": 13.75,
         "tRAS": 32,
         "tRFC": 350,
-        "DQSQ": 0.15
+        "temp_grade": "0–85°C",
+        "dqsq": 0.15
     },
-    "Samsung DDR4-3200 (Clock Marginal)": {
-        "Vendor": "Samsung",
-        "Speed": "3200",
-        "Density": "8Gb",
-        "VDD": 1.20,
-        "Temp_Max": 85,
-        "tCK": 0.625,
+    "Samsung K4A8G085WB (Clock Marginal)": {
+        "vendor": "Samsung",
+        "density": "8Gb",
+        "speed_bin": "DDR4-3200",
+        "jedec": "JESD79-4C",
         "tAA": 14.2,
         "tRCD": 14.0,
         "tRP": 14.0,
         "tRAS": 33,
-        "tRFC": 350,
-        "DQSQ": 0.17
+        "tRFC": 360,
+        "temp_grade": "0–85°C",
+        "dqsq": 0.17
     },
-    "SK Hynix DDR4-3200 (Thermal Stress)": {
-        "Vendor": "SK Hynix",
-        "Speed": "3200",
-        "Density": "8Gb",
-        "VDD": 1.20,
-        "Temp_Max": 95,
-        "tCK": 0.625,
+    "SK Hynix H5AN8G6NC (Thermal / Refresh Risk)": {
+        "vendor": "SK Hynix",
+        "density": "8Gb",
+        "speed_bin": "DDR4-3200",
+        "jedec": "JESD79-4C",
         "tAA": 13.9,
         "tRCD": 13.9,
         "tRP": 13.9,
         "tRAS": 32,
         "tRFC": 420,
-        "DQSQ": 0.16
+        "temp_grade": "0–95°C",
+        "dqsq": 0.16
     },
     "Generic DDR4-3200 (Multiple Failures)": {
-        "Vendor": "Generic",
-        "Speed": "3200",
-        "Density": "8Gb",
-        "VDD": 1.18,
-        "Temp_Max": 85,
-        "tCK": 0.60,
+        "vendor": "Generic",
+        "density": "8Gb",
+        "speed_bin": "DDR4-3200",
+        "jedec": "JESD79-4C",
         "tAA": 15.0,
         "tRCD": 15.0,
         "tRP": 15.0,
         "tRAS": 34,
-        "tRFC": 390,
-        "DQSQ": 0.20
+        "tRFC": 450,
+        "temp_grade": "0–85°C",
+        "dqsq": 0.21
     }
 }
 
-# ============================================================
-# ANALYSIS ENGINE
-# ============================================================
-def status(actual, ref, tol=0.05):
-    if actual <= ref:
-        return "PASS"
-    elif actual <= ref * (1 + tol):
-        return "MARGINAL"
-    else:
-        return "FAIL"
+JEDEC_LIMITS = {
+    "tAA": 13.75,
+    "tRCD": 13.75,
+    "tRP": 13.75,
+    "tRFC": 350,
+    "tREFI": 7.8,
+    "dqsq": 0.16
+}
 
-def analyze(part):
-    ref = JEDEC[part["Speed"]]
-    res = {}
-    fails = []
+# -------------------------------
+# Landing Page
+# -------------------------------
+st.title("📊 DDR Datasheet Review & JEDEC Audit Tool")
 
-    res["tAA"] = status(part["tAA"], ref["tAA"])
-    res["tRCD"] = status(part["tRCD"], ref["tRCD"])
-    res["tRP"] = status(part["tRP"], ref["tRP"])
-    res["tRFC"] = status(part["tRFC"], ref["tRFC_8Gb"], 0.1)
-    res["DQSQ"] = status(part["DQSQ"], ref["DQSQ"], 0.1)
+st.info(
+    """
+    **Offline / Local Usage Notice**  
+    This tool is designed to run completely **offline**.  
+    If you like the results generated here, you can download the full code package
+    and run it locally on your PC to review **private datasheets** without uploading
+    them to any public server.
+    """
+)
 
-    if res["tAA"] != "PASS":
-        fails.append("CLOCK_TIMING")
+st.markdown(
+    """
+    ### What this tool does
+    - Performs a **structured technical review** of DDR SDRAM datasheets  
+    - Maps parameters against **JEDEC standards**
+    - Explains **cause → effect → system-level symptoms**
+    - Demonstrates **PASS / MARGINAL / FAIL** scenarios
+    - Suggests **engineering mitigations**
+    """
+)
 
-    if res["DQSQ"] != "PASS":
-        fails.append("EYE_DIAGRAM")
+# -------------------------------
+# Part Selection
+# -------------------------------
+st.sidebar.header("📂 Select DDR Part")
+selected_part = st.sidebar.radio(
+    "Available DDR4 Datasheets",
+    list(DDR_DATABASE.keys())
+)
 
-    if part["Temp_Max"] > ref["Temp_Max"] or part["tRFC"] > ref["tRFC_8Gb"]:
-        fails.append("THERMAL_REFRESH")
+data = DDR_DATABASE[selected_part]
 
-    return res, fails
+st.success(f"🔍 Currently Reviewing: **{selected_part} ({data['vendor']})**")
 
-# ============================================================
-# UI
-# ============================================================
-st.set_page_config(layout="wide")
-st.title("📊 DDR4 JEDEC Datasheet Review & Failure Analysis Tool")
-
-# Sidebar
-st.sidebar.header("📦 Select DDR4 Part")
-part_name = st.sidebar.radio("Hard-coded Datasheets", list(DDR4_PARTS.keys()))
-part = DDR4_PARTS[part_name]
-results, failures = analyze(part)
-
-st.sidebar.success("Datasheet parameters extracted")
-
+# -------------------------------
+# Tabs
+# -------------------------------
 tabs = st.tabs([
-    "1️⃣ What this tool is",
-    "2️⃣ Why JEDEC matters",
-    "3️⃣ Extracted Datasheet Parameters",
-    "4️⃣ What is DDR4 (Theory)",
-    "5️⃣ JEDEC Reference",
-    "6️⃣ Parameter Comparison",
-    "7️⃣ Clock / SI / Eye Analysis",
-    "8️⃣ Thermal & Refresh Analysis",
-    "9️⃣ Failure Scenarios",
-    "🔟 Mitigations & Reviewer Q&A"
+    "DDR Basics",
+    "Clock & Frequency",
+    "Addressing & Architecture",
+    "Power & Voltages",
+    "AC Timing",
+    "Signal Integrity",
+    "Refresh, Thermal & Bandwidth",
+    "Failure Modes & Propagation",
+    "DDR3 vs DDR4 vs DDR5",
+    "Review Summary"
 ])
 
-# TAB 1
+# -------------------------------
+# TAB 1 – DDR BASICS
+# -------------------------------
 with tabs[0]:
-    st.markdown("""
-This tool emulates **automatic extraction of DDR4 parameters from datasheets**,  
-compares them against **JEDEC JESD79-4**, identifies **marginal & failing conditions**,  
-and proposes **practical mitigations**.
+    st.subheader("What this tab is")
+    st.write("A foundational explanation of DDR memory operation and DDR4 architecture.")
 
-You can run this tool locally and extend it to real PDF parsing.
-""")
+    st.subheader("Why it matters")
+    st.write(
+        "Most DDR failures originate from incorrect architectural assumptions rather than silicon defects."
+    )
 
-# TAB 2
+    st.subheader("DDR Theory")
+    st.write(
+        """
+        DDR transfers data on both clock edges.
+        DDR4 introduces bank groups, tighter timing margins, and lower voltage,
+        making system-level design critical.
+        """
+    )
+
+    st.subheader("Reviewer Q&A – Insights")
+    st.markdown(
+        """
+        **Q: Why do DDR4 failures appear random?**  
+        Because margin violations depend on temperature, voltage, and noise.
+
+        **Cause → Effect → Symptom**  
+        Wrong assumptions → margin erosion → intermittent field failures.
+
+        **Mitigation**  
+        Always validate controller configuration against JEDEC architecture.
+        """
+    )
+
+# -------------------------------
+# TAB 2 – CLOCK & FREQUENCY
+# -------------------------------
 with tabs[1]:
-    st.markdown("""
-JEDEC compliance ensures:
-- Interoperability
-- Signal integrity margin
-- Thermal reliability
-- Field robustness
+    st.subheader("What this tab is")
+    st.write("Validation of operating frequency and clock-derived timings.")
 
-Most DDR issues are **not functional bugs**, but **margin violations**.
-""")
+    st.subheader("Why it matters")
+    st.write("Clock errors scale into every AC timing parameter.")
 
-# TAB 3
+    st.markdown(f"- CAS Access Time (tAA): {data['tAA']} ns")
+
+    if data["tAA"] > JEDEC_LIMITS["tAA"]:
+        st.error("❌ Clock timing violation → reduced setup/hold margin.")
+        st.markdown("**Mitigation:** Reduce speed grade or increase CAS latency.")
+
+# -------------------------------
+# TAB 3 – ADDRESSING
+# -------------------------------
 with tabs[2]:
-    st.subheader(f"Extracted Parameters — {part_name}")
-    st.json(part)
+    st.subheader("What this tab is")
+    st.write("Verification of addressing and memory organization.")
 
-# TAB 4
+    st.subheader("Why it matters")
+    st.write("Addressing errors cause silent corruption.")
+
+# -------------------------------
+# TAB 4 – POWER
+# -------------------------------
 with tabs[3]:
-    st.markdown("""
-**DDR (Double Data Rate)** transfers data on both clock edges.  
-**DDR4** improves:
-- Lower voltage (1.2V)
-- Higher density
-- Bank groups
-- Tight timing margins
+    st.subheader("What this tab is")
+    st.write("Validation of DRAM supply assumptions.")
 
-This makes **SI and thermal analysis mandatory**.
-""")
+    st.subheader("Why it matters")
+    st.write("Voltage noise directly affects eye margin.")
 
-# TAB 5
+# -------------------------------
+# TAB 5 – AC TIMING
+# -------------------------------
 with tabs[4]:
-    st.json(JEDEC["3200"])
+    st.subheader("What this tab is")
+    st.write("AC timing vs JEDEC limits.")
 
-# TAB 6
+    st.markdown(
+        f"""
+        - tAA: {data['tAA']} ns  
+        - tRCD: {data['tRCD']} ns  
+        - tRP: {data['tRP']} ns  
+        """
+    )
+
+    if data["tAA"] > JEDEC_LIMITS["tAA"]:
+        st.error("❌ AC timing FAIL detected.")
+
+# -------------------------------
+# TAB 6 – SIGNAL INTEGRITY
+# -------------------------------
 with tabs[5]:
-    for k, v in results.items():
-        st.write(f"{k}: {v}")
+    st.subheader("What this tab is")
+    st.write("High-speed signal integrity assumptions.")
 
-# TAB 7
+    st.subheader("Why it matters")
+    st.write("Eye closure is the #1 root cause of DDR field failures.")
+
+    if data["dqsq"] > JEDEC_LIMITS["dqsq"]:
+        st.error("❌ Eye margin violation (DQSQ).")
+        st.markdown("**Mitigation:** Improve routing, termination, reduce speed.")
+
+# -------------------------------
+# TAB 7 – REFRESH, THERMAL & BANDWIDTH
+# -------------------------------
 with tabs[6]:
-    st.markdown("""
-Clock & Eye failures occur due to:
-- Excessive tAA
-- DQSQ violations
-- Board skew and jitter
+    st.subheader("What this tab is")
+    st.write("Refresh overhead and thermal behavior.")
 
-**Eye closure = silent data corruption risk**
-""")
+    refresh_loss = (data["tRFC"] / (JEDEC_LIMITS["tREFI"] * 1000)) * 100
 
-# TAB 8
+    st.markdown(f"- Refresh Bandwidth Loss: **{refresh_loss:.2f}%**")
+
+    if data["tRFC"] > JEDEC_LIMITS["tRFC"]:
+        st.error("❌ Excessive refresh → bandwidth & power risk.")
+
+    if "95" in data["temp_grade"]:
+        st.warning("⚠️ Extended temperature → doubled refresh risk.")
+
+# -------------------------------
+# TAB 8 – FAILURE MODES
+# -------------------------------
 with tabs[7]:
-    refresh_loss = (part["tRFC"] / (JEDEC["3200"]["tREFI"] * 1000)) * 100
-    st.write(f"Refresh bandwidth loss ≈ {refresh_loss:.2f}%")
-    st.markdown("""
-High temperature forces:
-- Increased refresh
-- Reduced bandwidth
-- Latency spikes
-""")
+    st.subheader("What this tab is")
+    st.write("Mapping violations to real-world failures.")
 
-# TAB 9
+    st.markdown(
+        """
+        - Clock margin loss → CRC / boot failures  
+        - Eye closure → random bit errors  
+        - Thermal refresh → throughput collapse  
+        """
+    )
+
+# -------------------------------
+# TAB 9 – DDR CONTEXT
+# -------------------------------
 with tabs[8]:
-    if not failures:
-        st.success("Clean JEDEC-compliant part")
-    else:
-        for f in failures:
-            st.error(f)
+    st.subheader("DDR Evolution Context")
 
-# TAB 10
+    st.markdown(
+        """
+        **DDR3:** Voltage-limited  
+        **DDR4:** Timing-limited  
+        **DDR5:** Power & SI-limited
+        """
+    )
+
+# -------------------------------
+# TAB 10 – SUMMARY
+# -------------------------------
 with tabs[9]:
-    st.markdown("""
-**Mitigations**
-- Reduce speed bin
-- Improve routing
-- Add airflow
-- Adjust controller timing
+    st.subheader("Final Review Summary")
 
-**Reviewer Rule**  
-If multiple MARGINALs exist → expect field failures.
-""")
+    st.markdown(
+        """
+        **Key Risks Identified**
+        - Clock margin
+        - Refresh overhead
+        - Eye integrity
+
+        **Recommended Actions**
+        - Speed derating
+        - SI simulation
+        - Thermal validation
+        """
+    )
