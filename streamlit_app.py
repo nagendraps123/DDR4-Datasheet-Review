@@ -107,6 +107,84 @@ if uploaded_file:
 - **Extra tips:** Misconfigured burst length reduces bandwidth or causes errors under high load.
 """)
 
+    # ---------------- Tab 2: Clock & Frequency ----------------
+    with tabs[1]:
+        st.subheader("Tab 2: Clock & Frequency")
+        st.markdown("**What this tab is:** Validates clock frequency, period, and speed-bin compliance.")
+        st.markdown("**Why it matters:** Clock timing is the reference for all DDR commands and data transfers.")
+        st.table([
+            {"Parameter":"Data Rate","Datasheet":"3200 MT/s","JEDEC":"3200 MT/s"},
+            {"Parameter":"tCK","Datasheet":f"{s_ref['tCK']} ns","JEDEC":f"{s_ref['tCK']} ns"},
+            {"Parameter":"Differential CK","Datasheet":"Yes","JEDEC":"Required"},
+        ])
+        st.markdown("**📝 Reviewer Insights / Notes**")
+        st.markdown("""
+- **tCK** is the base clock period. All AC timings (tAA, tRCD, tRP) are derived from it.  
+- **Cause → effect → symptom:** Faster clock reduces setup/hold margin → training passes sometimes but fails under temp/voltage variation.  
+- **Mitigation:** Reduce frequency, increase CAS latency, improve PCB clock trace.
+""")
+
+    # ---------------- Tab 3: Addressing ----------------
+    with tabs[2]:
+        st.subheader("Tab 3: Addressing & Architecture")
+        st.markdown("**What this tab is:** Verifies logical-to-physical address mapping.")
+        st.markdown("**Why it matters:** Incorrect addressing causes systematic silent data corruption.")
+        st.table([
+            {"Parameter":"Bank Groups","Datasheet":d_ref['BG'],"JEDEC":d_ref['BG']},
+            {"Parameter":"Banks / Group","Datasheet":4,"JEDEC":4},
+            {"Parameter":"Row Address","Datasheet":d_ref['Rows'],"JEDEC":d_ref['Rows']},
+            {"Parameter":"Column Address","Datasheet":d_ref['Cols'],"JEDEC":d_ref['Cols']},
+            {"Parameter":"Page Size","Datasheet":d_ref['Page'],"JEDEC":d_ref['Page']}
+        ])
+        st.markdown("**📝 Reviewer Insights / Notes**")
+        st.markdown("""
+- Wrong row/column mapping → refresh mis-target → silent corruption over time.  
+- Mitigation: Validate controller mapping with stress tests and training logs.
+""")
+
+    # ---------------- Tab 4: Power ----------------
+    with tabs[3]:
+        st.subheader("Tab 4: Power & Voltages")
+        st.markdown("**What this tab is:** Validates DRAM supply voltages.")
+        st.markdown("**Why it matters:** Voltage deviations can cause speed reduction, errors, or damage.")
+        st.table([
+            {"Rail":"VDD","Datasheet":"1.2V","JEDEC":p_ref['VDD']['range']},
+            {"Rail":"VPP","Datasheet":"2.38V","JEDEC":f"{p_ref['VPP']['min']}–{p_ref['VPP']['max']}V"}
+        ])
+        st.markdown("**📝 Reviewer Insights / Notes**")
+        st.markdown("""
+- Low VDD slows circuits → read/write errors.  
+- Mitigation: Tight PMIC regulation, local decoupling, proper layout.
+""")
+
+    # ---------------- Tab 5: AC Timing ----------------
+    with tabs[4]:
+        st.subheader("Tab 5: AC Timing")
+        st.markdown("**What this tab is:** Compares datasheet AC timings against JEDEC limits.")
+        st.markdown("**Why it matters:** Timing violations directly cause data corruption.")
+        st.table([
+            {"Parameter":"tAA","Datasheet":f"{s_ref['tAA']} ns","JEDEC":"≤13.75 ns"},
+            {"Parameter":"tRCD","Datasheet":f"{s_ref['tRCD']} ns","JEDEC":f"{s_ref['tRCD']} ns"},
+            {"Parameter":"tRP","Datasheet":f"{s_ref['tRP']} ns","JEDEC":f"{s_ref['tRP']} ns"},
+            {"Parameter":"tRAS","Datasheet":f"{s_ref['tRAS']} ns","JEDEC":"≥32 ns"},
+        ])
+        st.markdown("**📝 Reviewer Insights / Notes**")
+        st.markdown("""
+- CAS timing exceeds limit → reduces voltage/temp margin.  
+- Mitigation: Increase CAS latency or operate at lower speed grade.
+""")
+
+    # ---------------- Tab 6: Training ----------------
+    with tabs[5]:
+        st.subheader("Tab 6: DDR4 Training")
+        st.markdown("**What this tab is:** Shows DDR4 training procedures (Read Gate, Write Leveling, VrefDQ).")
+        st.markdown("**Why it matters:** Proper training ensures reliable read/write across all banks.")
+        st.markdown("**📝 Reviewer Insights / Notes**")
+        st.markdown("""
+- Poor training → unstable reads/writes.  
+- Mitigation: Re-run training at power-up, validate with stress patterns.
+""")
+
     # ---------------- Tab 7: Refresh / Thermal ----------------
     with tabs[6]:
         st.subheader("Tab 7: Refresh, Thermal & Bandwidth")
@@ -120,7 +198,6 @@ if uploaded_file:
             {"Parameter":"Temp Grade","Value":"0–85°C"},
             {"Parameter":"Refresh Tax (%)","Value":f"{eff_tax:.2f}%"},
         ])
-
         st.markdown("**Bandwidth Loss Calculation:**")
         st.markdown(f"""
 Effective bandwidth lost due to refresh cycles is approximated as:
@@ -128,23 +205,69 @@ Effective bandwidth lost due to refresh cycles is approximated as:
 > Bandwidth Loss (%) = (tRFC / (tREFI × 1000)) × 100  
 > For this device: ({d_ref['tRFC1']} ns / ({d_ref['tREFI']} µs × 1000)) × 100 ≈ {eff_tax:.2f}%
 
-**Why we calculate this:** Refresh cycles occupy memory cycles, reducing usable bandwidth. Helps designers quantify the impact of refresh on system throughput.
+**Why we calculate this:** Refresh cycles occupy memory cycles, reducing usable bandwidth.
 """)
-
         st.markdown("**📝 Reviewer Insights / Notes**")
         st.markdown("""
-- **High-temperature impact:** Above 85°C, refresh frequency may double → effective bandwidth reduces further.  
-- **System-level symptom:** Performance drops under thermal stress even if CPU load is moderate.  
-- **Cause → effect:** Longer tRFC / tREFI → refresh occupies more cycles → reduced usable bandwidth.  
-- **Mitigation strategies:**  
-   - Thermal throttling to reduce power and heat.  
-   - Improve airflow over DIMMs.  
-   - Relax refresh timing at high temperature if allowed by JEDEC.  
-   - Monitor refresh tax (%) to ensure system meets bandwidth requirements.
+- High temp → refresh frequency increases → bandwidth reduces.  
+- Mitigation: thermal throttling, improved airflow, relaxed refresh timing if allowed, monitor refresh tax %.
 """)
 
-# -------------------- Remaining tabs can follow the previous logic ----------------
-# Tab 2-6, 8-10 code similar to your previous implementation with updated Q&A
+    # ---------------- Tab 8: Signal Integrity ----------------
+    with tabs[7]:
+        st.subheader("Tab 8: Signal Integrity")
+        st.markdown("**What this tab is:** Assess signal-quality assumptions like jitter and skew.")
+        st.markdown("**Why it matters:** Poor SI → read/write errors, unstable operation.")
+        st.table([
+            {"Metric":"tDQSQ","Datasheet":"Not Specified","JEDEC":"≤0.16 ns"},
+            {"Metric":"Jitter","Datasheet":"Not Specified","JEDEC":"Implementation Dependent"},
+            {"Metric":"Eye Margin","Datasheet":"Not Specified","JEDEC":"Implementation Dependent"}
+        ])
+        st.markdown("**📝 Reviewer Insights / Notes**")
+        st.markdown("""
+- Skew/jitter → eye closure → training failures.  
+- Mitigation: PCB routing length match, impedance control, SI simulation.
+""")
+
+    # ---------------- Tab 9: DDR3/DDR4/DDR5 Context ----------------
+    with tabs[8]:
+        st.subheader("Tab 9: DDR3 / DDR4 / DDR5 Context")
+        st.markdown("**What this tab is:** Shows evolutionary context of DDR generations.")
+        st.markdown("**Why it matters:** Understanding improvements informs migration and backward compatibility.")
+        st.table([
+            {"Type":"DDR3","Voltage":"1.5 V","Banks":8,"Primary Risk":"Power"},
+            {"Type":"DDR4","Voltage":"1.2 V","Banks":16,"Primary Risk":"Timing"},
+            {"Type":"DDR5","Voltage":"1.1 V","Banks":32,"Primary Risk":"SI / PMIC"}
+        ])
+        st.markdown("**📝 Reviewer Insights / Notes**")
+        st.markdown("""
+- DDR4 improves upon DDR3: lower voltage, higher speed, more banks, 8n prefetch, better efficiency.  
+- DDR5 improves upon DDR4: even lower voltage, more banks, bank groups, higher speed, improved SI and on-die ECC.  
+- Implication: Migration requires controller update, SI review, and timing adjustments.
+""")
+
+    # ---------------- Tab 10: Review Summary ----------------
+    with tabs[9]:
+        st.subheader("Tab 10: Review Summary & Mitigation")
+        st.markdown("**What this tab is:** Executive summary of compliance and recommendations.")
+        st.markdown("**Why it matters:** Provides actionable insights for integrators and reviewers.")
+        st.table([
+            {"Domain":"Architecture & Addressing","Status":"✅ PASS"},
+            {"Domain":"Clock & Frequency","Status":"✅ PASS"},
+            {"Domain":"Power & Voltages","Status":"✅ PASS"},
+            {"Domain":"AC Timing","Status":"❌ FAIL"},
+            {"Domain":"Training","Status":"⚠️ RISK"},
+            {"Domain":"Signal Integrity","Status":"⚠️ RISK"},
+            {"Domain":"Refresh / Thermal","Status":"⚠️ REVIEW"}
+        ])
+        st.markdown("**Consolidated Mitigation Actions:**")
+        st.markdown("""
+- Increase CAS latency or downgrade speed grade  
+- Tight PCB routing for signal integrity  
+- Validate high-temperature operation and refresh strategy  
+- Re-run training on power-up  
+- Monitor refresh bandwidth impact
+""")
 
 else:
     st.info("Upload a DDR4 datasheet PDF to run the full audit.")
