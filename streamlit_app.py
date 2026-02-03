@@ -4,380 +4,352 @@ import pandas as pd
 # -------------------------------
 # Page Config
 # -------------------------------
-st.set_page_config(
-    page_title="DDR4 Datasheet Review Tool",
-    layout="wide"
-)
+st.set_page_config(page_title="DDR4 Datasheet Review Tool", layout="wide")
 
 # -------------------------------
-# Hard-coded DDR4 Parts
+# Hardcoded DDR4 Parts Database
 # -------------------------------
 DDR_DATABASE = {
-    "Micron MT40A1G8SA-075E": {  # Golden
-        "category": "Golden",
+    "Micron MT40A1G8SA-075E (Golden)": {
         "vendor": "Micron",
         "density": "8Gb",
         "speed_bin": "DDR4-3200AA",
         "jedec": "JESD79-4C",
-        "tAA": 13.5,
-        "tRCD": 13.5,
-        "tRP": 13.5,
+        "tCK": 0.625,
+        "tAA": 13.75,
+        "tRCD": 13.75,
+        "tRP": 13.75,
         "tRAS": 32,
         "tRFC": 350,
         "VDD": 1.2,
         "VPP": 2.5,
-        "temp_grade": "0–85°C",
-        "tDQSQ": 0.15,
-        "eye_height": 360,
-        "eye_width": 0.52,
-        "clk_jitter": 0.15,
-        "pcb_skew": 20,
-        "I_dd": 4.0
+        "TempGrade": "0–85°C",
+        "tREFI": 7.8,
+        "SignalMargin": 0.16,
+        "EyeHeight": 0.25,
+        "Jitter": 0.05,
+        "TrainingPass": True,
+        "ClockSkew": 0.05,
+        "PCBLengthMismatch": 0.1
     },
-    "Samsung K4A8G085WB-BCRC": {  # Marginal
-        "category": "Marginal",
+    "Samsung K4A8G085WB-BCRC (Marginal)": {
         "vendor": "Samsung",
         "density": "8Gb",
-        "speed_bin": "DDR4-3200AA",
+        "speed_bin": "DDR4-3200",
         "jedec": "JESD79-4C",
-        "tAA": 13.8,
-        "tRCD": 13.8,
-        "tRP": 13.8,
-        "tRAS": 34,
-        "tRFC": 360,
-        "VDD": 1.18,
-        "VPP": 2.48,
-        "temp_grade": "0–90°C",
-        "tDQSQ": 0.17,
-        "eye_height": 350,
-        "eye_width": 0.50,
-        "clk_jitter": 0.16,
-        "pcb_skew": 25,
-        "I_dd": 4.2
+        "tCK": 0.625,
+        "tAA": 14.0,
+        "tRCD": 13.9,
+        "tRP": 14.1,
+        "tRAS": 32,
+        "tRFC": 355,
+        "VDD": 1.2,
+        "VPP": 2.5,
+        "TempGrade": "0–85°C",
+        "tREFI": 7.8,
+        "SignalMargin": 0.18,
+        "EyeHeight": 0.22,
+        "Jitter": 0.08,
+        "TrainingPass": True,
+        "ClockSkew": 0.08,
+        "PCBLengthMismatch": 0.15
     },
-    "Hynix H5AN8G6NCJ-BC": {  # Failure
-        "category": "Failure",
+    "Hynix H5AN8G8NAFR-TF (Failure 1)": {
         "vendor": "Hynix",
         "density": "8Gb",
+        "speed_bin": "DDR4-3200",
+        "jedec": "JESD79-4C",
+        "tCK": 0.625,
+        "tAA": 15.0,
+        "tRCD": 15.0,
+        "tRP": 15.0,
+        "tRAS": 32,
+        "tRFC": 380,
+        "VDD": 1.25,
+        "VPP": 2.6,
+        "TempGrade": "0–95°C",
+        "tREFI": 7.8,
+        "SignalMargin": 0.25,
+        "EyeHeight": 0.15,
+        "Jitter": 0.12,
+        "TrainingPass": False,
+        "ClockSkew": 0.12,
+        "PCBLengthMismatch": 0.25
+    },
+    "Micron MT40A2G8SA-075E (Failure 2)": {
+        "vendor": "Micron",
+        "density": "16Gb",
         "speed_bin": "DDR4-3200AA",
         "jedec": "JESD79-4C",
-        "tAA": 14.5,
-        "tRCD": 14,
-        "tRP": 14,
-        "tRAS": 36,
-        "tRFC": 380,
-        "VDD": 1.18,
-        "VPP": 2.48,
-        "temp_grade": "0–95°C",
-        "tDQSQ": 0.20,
-        "eye_height": 300,
-        "eye_width": 0.45,
-        "clk_jitter": 0.18,
-        "pcb_skew": 50,
-        "I_dd": 4.5
+        "tCK": 0.625,
+        "tAA": 16.0,
+        "tRCD": 16.0,
+        "tRP": 16.0,
+        "tRAS": 33,
+        "tRFC": 400,
+        "VDD": 1.25,
+        "VPP": 2.65,
+        "TempGrade": "0–95°C",
+        "tREFI": 7.8,
+        "SignalMargin": 0.3,
+        "EyeHeight": 0.12,
+        "Jitter": 0.15,
+        "TrainingPass": False,
+        "ClockSkew": 0.15,
+        "PCBLengthMismatch": 0.3
     }
-}
-
-# -------------------------------
-# JEDEC Reference
-# -------------------------------
-JEDEC_REF = {
-    "tAA": 13.75,
-    "tRCD": 13.75,
-    "tRP": 13.75,
-    "tRAS": 32,
-    "tRFC": 350,
-    "VDD_min": 1.14,
-    "VDD_max": 1.26,
-    "VPP_min": 2.375,
-    "VPP_max": 2.75,
-    "tDQSQ_max": 0.16,
-    "eye_height_min": 350,
-    "eye_width_min": 0.50,
-    "clk_jitter_max": 0.16,
-    "pcb_skew_max": 25,
-    "I_dd_max": 4.2
 }
 
 # -------------------------------
 # Landing Page
 # -------------------------------
 st.title("📊 DDR4 Datasheet Review & JEDEC Audit Tool")
-
-st.info("""
-**Offline Tool Notice:**  
-This tool runs completely offline. You can download the code package and run it locally to review your **private DDR4 datasheets** securely.  
-""")
-
+st.info(
+    """
+    **Offline Mode:**  
+    This tool runs fully offline using hardcoded DDR4 datasheets.  
+    You can also download this package and run it locally to review your own private datasheets.  
+    No data is uploaded to any server.
+    """
+)
 st.markdown("""
-### Purpose
-- Review DDR4 datasheet parameters vs JEDEC limits  
-- Identify **golden, marginal, or failure parts**  
-- Provide **technical insights, root cause analysis, and mitigation guidance**
+### Purpose:
+- Compare DDR4 datasheet parameters with **JEDEC JESD79-4C**.
+- Highlight **marginal, failure, and golden samples**.
+- Provide **root cause analysis, reviewer insights, and mitigation guidance**.
+- Help engineers understand **thermal, refresh, AC timing, clock, signal integrity, and power impacts**.
 """)
 
 # -------------------------------
-# Sidebar: Select Part
+# Part Selection
 # -------------------------------
 st.sidebar.header("📂 Select DDR4 Part")
-selected_part = st.sidebar.radio(
-    "Available DDR4 Parts",
-    list(DDR_DATABASE.keys())
-)
-
+selected_part = st.sidebar.radio("Available DDR4 Parts", list(DDR_DATABASE.keys()))
 data = DDR_DATABASE[selected_part]
-st.success(f"🔍 Reviewing: **{selected_part} ({data['vendor']}) – {data['category']}**")
+st.success(f"🔍 Currently Reviewing: **{selected_part} ({data['vendor']})**")
 
 # -------------------------------
 # Tabs
 # -------------------------------
 tabs = st.tabs([
-    "1. DDR Basics", "2. Clock & Frequency", "3. Addressing",
-    "4. Power", "5. AC Timing", "6. Training", "7. Refresh/Thermal",
-    "8. Signal Integrity", "9. DDR3/4/5 Context", "10. Review Summary"
+    "1. DDR Basics", "2. Clock & Frequency", "3. Addressing & Architecture",
+    "4. Power & Voltages", "5. AC Timing", "6. Training",
+    "7. Refresh/Thermal/Bandwidth", "8. Signal Integrity", "9. DDR3/4/5 Context",
+    "10. Review Summary"
 ])
 
 # -------------------------------
-# Helper: Color-coded PASS/MARGINAL/FAIL
+# Helper for color-coded status
 # -------------------------------
-def check_status(param, value):
-    ref = JEDEC_REF.get(param)
-    if ref is None:
-        return "✅ PASS"
-    if isinstance(ref, tuple):
-        if value < ref[0] or value > ref[1]:
+def status_color(value, jedec_limit, param_type='max'):
+    if param_type=='max':
+        if value <= jedec_limit:
+            return "✅ PASS"
+        elif value <= jedec_limit*1.05:
+            return "⚠️ MARGINAL"
+        else:
             return "❌ FAIL"
-        elif value == ref[0] or value == ref[1]:
-            return "⚠️ Marginal"
-    else:
-        if value > ref:
+    elif param_type=='min':
+        if value >= jedec_limit:
+            return "✅ PASS"
+        elif value >= jedec_limit*0.95:
+            return "⚠️ MARGINAL"
+        else:
             return "❌ FAIL"
-        elif value == ref:
-            return "⚠️ Marginal"
-    return "✅ PASS"
 
 # -------------------------------
-# TAB 1 – DDR Basics
+# Tab 1 – DDR Basics
 # -------------------------------
 with tabs[0]:
     st.subheader("What this tab is")
-    st.write("Overview of DDR4 architecture, bank groups, prefetch, burst length, memory operation.")
-
+    st.write("Overview of DDR4 internal architecture, bank groups, prefetch, burst length, and timing fundamentals.")
     st.subheader("Why it matters")
-    st.write("DDR architecture defines timing, refresh, and system-level behavior.")
-
-    st.markdown("**Key Parameters / Root Causes**")
-    df_basic = pd.DataFrame([
-        {"Parameter": "Memory Type", "Value": "DDR4 SDRAM", "Source": "Datasheet"},
-        {"Parameter": "Bank Groups", "Value": 4, "Source": "JEDEC"},
-        {"Parameter": "Total Banks", "Value": 16, "Source": "JEDEC"},
-        {"Parameter": "Burst Length", "Value": "BL8", "Source": "JEDEC"},
-        {"Parameter": "Prefetch", "Value": "8n", "Source": "JEDEC"}
+    st.write("DDR fundamentals determine timing, refresh, and data movement across the system.")
+    st.subheader("Key Parameters / Root Causes")
+    df_basics = pd.DataFrame([
+        {"Parameter":"Memory Type","Datasheet":"DDR4 SDRAM","JEDEC":"DDR4 SDRAM","Status":"✅ PASS"},
+        {"Parameter":"Bank Groups","Datasheet":4,"JEDEC":4,"Status":"✅ PASS"},
+        {"Parameter":"Total Banks","Datasheet":16,"JEDEC":16,"Status":"✅ PASS"},
+        {"Parameter":"Burst Length","Datasheet":"BL8","JEDEC":"BL8","Status":"✅ PASS"},
+        {"Parameter":"Prefetch","Datasheet":"8n","JEDEC":"8n","Status":"✅ PASS"},
     ])
-    st.table(df_basic)
-
+    st.table(df_basics)
     st.subheader("Reviewer Insights / Notes (Q&A)")
     st.markdown("""
-- Prefetch 8n → internal 8-bit fetch → high bandwidth.  
-- Bank groups → parallel access, reduced row conflicts.  
-- Cause → effect → symptom: Wrong mapping → intermittent errors → data corruption.  
-- Mitigation: Align controller config, verify thermal profile and training.
+**Q: Why bank groups?**  
+Enable parallel access and reduce row conflicts, increasing throughput.  
+
+**Q: What is prefetch (8n)?**  
+8 bits are fetched internally per access, serialized externally for high bandwidth.  
+
+**Mitigation:**  
+Ensure memory controller configuration matches DDR4 JEDEC spec.
 """)
 
 # -------------------------------
-# TAB 2 – Clock & Frequency
+# Tab 2 – Clock & Frequency
 # -------------------------------
 with tabs[1]:
     st.subheader("What this tab is")
-    st.write("Evaluate clock period, jitter, differential clocks, and PCB trace skew.")
-
+    st.write("Check DDR4 clock period, frequency, and jitter.")
     st.subheader("Why it matters")
-    st.write("Clock issues directly impact setup/hold margins, read/write stability, and AC timing compliance.")
-
-    st.markdown("**Key Parameters / Root Causes**")
+    st.write("All AC timings derive from tCK; skew/jitter reduce timing margin.")
     df_clock = pd.DataFrame([
-        {"Parameter":"Data Rate","Value":"3200 MT/s","JEDEC":"3200 MT/s","Status":"✅ PASS"},
-        {"Parameter":"tCK","Value":"{0:.3f} ns".format(0.625),"JEDEC":"0.625 ns","Status": check_status('tAA', data['tAA'])},
-        {"Parameter":"Clock Jitter","Value":"{0:.3f} ns".format(data['clk_jitter']),"JEDEC":"≤0.16 ns","Status": "❌ FAIL" if data['clk_jitter']>JEDEC_REF['clk_jitter_max'] else "✅ PASS"},
-        {"Parameter":"PCB Skew","Value":"{0} ps".format(data['pcb_skew']),"JEDEC":"≤25 ps","Status": "❌ FAIL" if data['pcb_skew']>JEDEC_REF['pcb_skew_max'] else "✅ PASS"}
+        {"Parameter":"tCK (ns)","Datasheet":data["tCK"],"JEDEC":0.625,"Status":status_color(data["tCK"],0.625,'max')},
+        {"Parameter":"Jitter (ns)","Datasheet":data["Jitter"],"JEDEC":0.16,"Status":status_color(data["Jitter"],0.16,'max')},
+        {"Parameter":"Clock Skew (ns)","Datasheet":data["ClockSkew"],"JEDEC":0.1,"Status":status_color(data["ClockSkew"],0.1,'max')},
+        {"Parameter":"PCB Trace Length Mismatch (mm)","Datasheet":data["PCBLengthMismatch"],"JEDEC":0.2,"Status":status_color(data["PCBLengthMismatch"],0.2,'max')}
     ])
     st.table(df_clock)
-
     st.subheader("Reviewer Insights / Notes (Q&A)")
     st.markdown("""
-- Clock jitter or PCB skew > limits → CRC errors, boot instability.  
-- Mitigation: trace matching, low-jitter clock buffers, possibly reduce speed bin.
+**Cause → Effect → Symptom:** Clock skew/jitter → setup/hold violations → training errors.  
+
+**Mitigation:** Tight PCB routing, matched trace lengths, proper termination.
 """)
 
 # -------------------------------
-# TAB 3 – Addressing & Architecture
+# Tab 3 – Addressing & Architecture
 # -------------------------------
 with tabs[2]:
     st.subheader("What this tab is")
-    st.write("Verify bank/row/column addressing and page size.")
-
+    st.write("Logical-to-physical mapping of banks, rows, columns, and pages.")
     st.subheader("Why it matters")
-    st.write("Incorrect addressing → wrong row activation → data corruption.")
-
+    st.write("Incorrect addressing leads to silent corruption.")
     df_addr = pd.DataFrame([
-        {"Parameter":"Bank Groups","Value":4,"JEDEC":4,"Status":"✅ PASS"},
-        {"Parameter":"Banks/Group","Value":4,"JEDEC":4,"Status":"✅ PASS"},
-        {"Parameter":"Row Address","Value":"A0–A14","JEDEC":"A0–A14","Status":"✅ PASS"},
-        {"Parameter":"Column Address","Value":"A0–A9","JEDEC":"A0–A9","Status":"✅ PASS"},
-        {"Parameter":"Page Size","Value":"1 KB","JEDEC":"1 KB","Status":"✅ PASS"}
+        {"Parameter":"Bank Groups","Datasheet":4,"JEDEC":4,"Status":"✅ PASS"},
+        {"Parameter":"Banks / Group","Datasheet":4,"JEDEC":4,"Status":"✅ PASS"},
+        {"Parameter":"Row Address","Datasheet":"A0–A14","JEDEC":"A0–A14","Status":"✅ PASS"},
+        {"Parameter":"Column Address","Datasheet":"A0–A9","JEDEC":"A0–A9","Status":"✅ PASS"},
+        {"Parameter":"Page Size","Datasheet":"1KB","JEDEC":"1KB","Status":"✅ PASS"}
     ])
     st.table(df_addr)
-
     st.subheader("Reviewer Insights / Notes (Q&A)")
-    st.markdown("Mapping correct, but AC/clock/thermal issues amplify errors.")
+    st.markdown("Validate controller mapping using stress tests; row/col misalignment causes silent corruption.")
 
 # -------------------------------
-# TAB 4 – Power & Voltages
+# Tab 4 – Power & Voltages
 # -------------------------------
 with tabs[3]:
     st.subheader("What this tab is")
-    st.write("Validates VDD, VPP, and transient current draw (Idd).")
-
+    st.write("Supply voltages and tolerances.")
     st.subheader("Why it matters")
-    st.write("Voltage deviation → slower operation, data corruption, system instability.")
-
+    st.write("Voltage deviation affects speed, retention, and noise immunity.")
     df_power = pd.DataFrame([
-        {"Parameter":"VDD","Value":data['VDD'],"JEDEC":"1.2V ±0.06V","Status":"⚠️ Marginal" if not(1.14<=data['VDD']<=1.26) else "✅ PASS"},
-        {"Parameter":"VPP","Value":data['VPP'],"JEDEC":"2.375–2.75V","Status":"✅ PASS"},
-        {"Parameter":"I_dd","Value":data['I_dd'],"JEDEC":"≤4.2A","Status":"❌ FAIL" if data['I_dd']>JEDEC_REF['I_dd_max'] else "✅ PASS"}
+        {"Parameter":"VDD (V)","Datasheet":data["VDD"],"JEDEC":1.2,"Status":status_color(data["VDD"],1.2,'max')},
+        {"Parameter":"VPP (V)","Datasheet":data["VPP"],"JEDEC":2.5,"Status":status_color(data["VPP"],2.5,'max')}
     ])
     st.table(df_power)
-
     st.subheader("Reviewer Insights / Notes (Q&A)")
-    st.markdown("""
-- Low VDD → slower tCK → read/write errors.  
-- High Idd → power droop, system instability.  
-- Mitigation: Tight voltage regulation, decoupling capacitors, thermal monitoring.
-""")
+    st.markdown("Low/high voltage causes errors; mitigate with tight PMIC, decoupling, and layout optimization.")
 
 # -------------------------------
-# TAB 5 – AC Timing
+# Tab 5 – AC Timing
 # -------------------------------
 with tabs[4]:
     st.subheader("What this tab is")
-    st.write("Compare CAS, RAS, RP, RC, WR, RTP timings vs JEDEC.")
-
+    st.write("Read/write access timing compared to JEDEC spec.")
     st.subheader("Why it matters")
-    st.write("AC timing violations → read/write errors, intermittent corruption.")
-
+    st.write("Violating tAA/tRCD/tRP/tRAS causes errors and reduces margin.")
     df_ac = pd.DataFrame([
-        {"Parameter":"tAA","Value":data['tAA'],"JEDEC":JEDEC_REF['tAA'],"Status":"❌ FAIL" if data['tAA']>JEDEC_REF['tAA'] else "✅ PASS"},
-        {"Parameter":"tRCD","Value":data['tRCD'],"JEDEC":JEDEC_REF['tRCD'],"Status":"❌ FAIL" if data['tRCD']>JEDEC_REF['tRCD'] else "✅ PASS"},
-        {"Parameter":"tRP","Value":data['tRP'],"JEDEC":JEDEC_REF['tRP'],"Status":"❌ FAIL" if data['tRP']>JEDEC_REF['tRP'] else "✅ PASS"},
-        {"Parameter":"tRAS","Value":data['tRAS'],"JEDEC":JEDEC_REF['tRAS'],"Status":"✅ PASS" if data['tRAS']>=JEDEC_REF['tRAS'] else "❌ FAIL"},
-        {"Parameter":"tRFC","Value":data['tRFC'],"JEDEC":JEDEC_REF['tRFC'],"Status":"❌ FAIL" if data['tRFC']>JEDEC_REF['tRFC'] else "✅ PASS"}
+        {"Parameter":"tAA (ns)","Datasheet":data["tAA"],"JEDEC":13.75,"Status":status_color(data["tAA"],13.75)},
+        {"Parameter":"tRCD (ns)","Datasheet":data["tRCD"],"JEDEC":13.75,"Status":status_color(data["tRCD"],13.75)},
+        {"Parameter":"tRP (ns)","Datasheet":data["tRP"],"JEDEC":13.75,"Status":status_color(data["tRP"],13.75)},
+        {"Parameter":"tRAS (ns)","Datasheet":data["tRAS"],"JEDEC":32,"Status":status_color(data["tRAS"],32,'min')}
     ])
     st.table(df_ac)
-
     st.subheader("Reviewer Insights / Notes (Q&A)")
-    st.markdown("""
-- tAA, tRCD, tRP > limits → intermittent corruption, system errors.  
-- Mitigation: Reduce speed bin, increase CAS latency, adjust controller timing.
-""")
+    st.markdown("Higher-than-spec timings reduce margin; lower timings may cause unstable operation.")
 
 # -------------------------------
-# TAB 6 – Training
+# Tab 6 – Training
 # -------------------------------
 with tabs[5]:
     st.subheader("What this tab is")
-    st.write("Read/write leveling, VrefDQ calibration, training stability.")
-
+    st.write("DDR4 read/write leveling and VrefDQ training.")
     st.subheader("Why it matters")
-    st.write("Poor training → unstable operation, bank misalignment.")
-
-    st.markdown("Reviewer Insights / Notes (Q&A)")
-    st.markdown("""
-- Causes: skew, clock jitter, voltage noise.  
-- Mitigation: Re-run training, verify under high temperature, low voltage stress.
-""")
+    st.write("Ensures all banks operate reliably.")
+    df_training = pd.DataFrame([
+        {"Parameter":"Training Pass","Datasheet":data["TrainingPass"],"JEDEC":"Pass","Status":"✅ PASS" if data["TrainingPass"] else "❌ FAIL"}
+    ])
+    st.table(df_training)
+    st.subheader("Reviewer Insights / Notes (Q&A)")
+    st.markdown("Training failures → unstable read/write. Mitigate with controller firmware updates and retesting.")
 
 # -------------------------------
-# TAB 7 – Refresh / Thermal / Bandwidth
+# Tab 7 – Refresh / Thermal / Bandwidth
 # -------------------------------
 with tabs[6]:
     st.subheader("What this tab is")
-    st.write("Refresh timing, thermal impact, and bandwidth loss calculations.")
-
+    st.write("Refresh cycles, tRFC, thermal impact, and bandwidth reduction.")
     st.subheader("Why it matters")
-    st.write("Improper refresh → data corruption or bandwidth loss; thermal stress amplifies issues.")
-
-    refresh_tax = (data['tRFC'] / (7.8*1000))*100  # tREFI=7.8us
+    st.write("Refresh steals bandwidth; thermal increase may double refresh frequency.")
+    bandwidth_loss = (data["tRFC"] / (data["tREFI"]*1000))*100
     df_refresh = pd.DataFrame([
-        {"Parameter":"tRFC","Value":data['tRFC'],"JEDEC":JEDEC_REF['tRFC'],"Status":"❌ FAIL" if data['tRFC']>JEDEC_REF['tRFC'] else "✅ PASS"},
-        {"Parameter":"tREFI","Value":"7.8 µs","JEDEC":"7.8 µs","Status":"✅ PASS"},
-        {"Parameter":"Temp Grade","Value":data['temp_grade'],"JEDEC":"0–85°C","Status":"❌ FAIL" if "95" in data['temp_grade'] else "✅ PASS"},
-        {"Parameter":"Refresh Tax (%)","Value":"{0:.2f}%".format(refresh_tax),"JEDEC":"≤5%","Status":"⚠️ Marginal" if refresh_tax>5 else "✅ PASS"}
+        {"Parameter":"tRFC (ns)","Datasheet":data["tRFC"],"JEDEC":350,"Status":status_color(data["tRFC"],350)},
+        {"Parameter":"tREFI (µs)","Datasheet":data["tREFI"],"JEDEC":7.8,"Status":"✅ PASS"},
+        {"Parameter":"Temperature Grade","Datasheet":data["TempGrade"],"JEDEC":"0–85°C","Status":"✅ PASS"},
+        {"Parameter":"Bandwidth Loss (%)","Datasheet":f"{bandwidth_loss:.2f}","JEDEC":"≤5%","Status":"✅ PASS" if bandwidth_loss<=5 else "⚠️ MARGINAL" if bandwidth_loss<=6 else "❌ FAIL"}
     ])
     st.table(df_refresh)
-
-    st.markdown("Bandwidth loss (%) = (tRFC / (tREFI × 1000)) × 100")
+    st.subheader("Reviewer Insights / Notes (Q&A)")
+    st.markdown("High temp → increased refresh → reduces bandwidth. Mitigate with airflow, thermal throttling, or relax refresh timing if allowed.")
 
 # -------------------------------
-# TAB 8 – Signal Integrity
+# Tab 8 – Signal Integrity
 # -------------------------------
 with tabs[7]:
     st.subheader("What this tab is")
-    st.write("DQ/DQS skew, eye diagram, reflections, and SI margins.")
-
+    st.write("Signal quality, eye diagram, skew, and reflections.")
     st.subheader("Why it matters")
-    st.write("Poor SI → read/write instability, training failure.")
-
+    st.write("Poor SI leads to read/write errors and training failures.")
     df_si = pd.DataFrame([
-        {"Metric":"tDQSQ","Value":data['tDQSQ'],"JEDEC":"≤0.16 ns","Status":"❌ FAIL" if data['tDQSQ']>JEDEC_REF['tDQSQ_max'] else "✅ PASS"},
-        {"Metric":"Eye Height (mV)","Value":data['eye_height'],"JEDEC":">=350 mV","Status":"❌ FAIL" if data['eye_height']<JEDEC_REF['eye_height_min'] else "✅ PASS"},
-        {"Metric":"Eye Width (UI)","Value":data['eye_width'],"JEDEC":">=0.50 UI","Status":"❌ FAIL" if data['eye_width']<JEDEC_REF['eye_width_min'] else "✅ PASS"}
+        {"Parameter":"Signal Margin (ns)","Datasheet":data["SignalMargin"],"JEDEC":0.16,"Status":status_color(data["SignalMargin"],0.16)},
+        {"Parameter":"Eye Height (V)","Datasheet":data["EyeHeight"],"JEDEC":0.2,"Status":status_color(data["EyeHeight"],0.2,'min')},
+        {"Parameter":"Jitter (ns)","Datasheet":data["Jitter"],"JEDEC":0.16,"Status":status_color(data["Jitter"],0.16)},
     ])
     st.table(df_si)
-
-    st.markdown("Reviewer Insights / Notes (Q&A): Reflections, mismatched trace lengths, signal crosstalk cause intermittent errors. Mitigation: PCB optimization, impedance tuning.")
+    st.subheader("Reviewer Insights / Notes (Q&A)")
+    st.markdown("Poor eye height/skew → data errors. Mitigation: layout optimization, SI simulation, terminations, and matched routing.")
 
 # -------------------------------
-# TAB 9 – DDR3 / DDR4 / DDR5 Context
+# Tab 9 – DDR3/4/5 Context
 # -------------------------------
 with tabs[8]:
     st.subheader("What this tab is")
-    st.write("DDR3, DDR4, DDR5 comparison for voltage, banks, prefetch, and risk areas.")
-
+    st.write("Evolution of DDR standards and compatibility considerations.")
+    st.subheader("Why it matters")
+    st.write("Migration and controller design requires understanding differences.")
     df_ctx = pd.DataFrame([
-        {"Type":"DDR3","Voltage":"1.5V","Banks":8,"Prefetch":"4n","Main Risk":"Power"},
-        {"Type":"DDR4","Voltage":"1.2V","Banks":16,"Prefetch":"8n","Main Risk":"Timing / SI"},
-        {"Type":"DDR5","Voltage":"1.1V","Banks":32,"Prefetch":"16n","Main Risk":"SI / Power noise"}
+        {"Type":"DDR3","Voltage":"1.5 V","Banks":8,"Primary Risk":"Power"},
+        {"Type":"DDR4","Voltage":"1.2 V","Banks":16,"Primary Risk":"Timing"},
+        {"Type":"DDR5","Voltage":"1.1 V","Banks":32,"Primary Risk":"SI/Power Noise"}
     ])
     st.table(df_ctx)
-
-    st.markdown("DDR4 → timing margin, SI, and thermal must be monitored; mitigations applied where necessary.")
+    st.subheader("Reviewer Insights / Notes (Q&A)")
+    st.markdown("DDR4 improves over DDR3 with lower voltage, more banks, 8n prefetch. DDR5 further improves SI, speed, and on-die ECC. Migration requires timing and SI review.")
 
 # -------------------------------
-# TAB 10 – Review Summary
+# Tab 10 – Final Review Summary
 # -------------------------------
 with tabs[9]:
-    st.subheader("Final Review Summary")
-
+    st.subheader("Final Review Summary & Mitigation")
     df_summary = pd.DataFrame([
-        {"Domain":"Architecture","Status":"✅ PASS","Notes":"Compliant"},
-        {"Domain":"Clock & Frequency","Status":"❌ FAIL","Notes":"Jitter & skew exceed limits"},
-        {"Domain":"Power & Voltages","Status":"❌ FAIL","Notes":"VDD marginal, Idd transient issues"},
-        {"Domain":"AC Timing","Status":"❌ FAIL","Notes":"Multiple tAA, tRCD, tWR violations"},
-        {"Domain":"Training","Status":"⚠️ Marginal","Notes":"Some banks unstable"},
-        {"Domain":"Signal Integrity","Status":"❌ FAIL","Notes":"Eye diagram & skew failures"},
-        {"Domain":"Refresh / Thermal","Status":"❌ FAIL","Notes":"tRFC exceeds, Temp grade exceeded"},
-        {"Domain":"DDR3/4/5 Context","Status":"✅ PASS","Notes":"Correctly identified"}
+        {"Domain":"DDR Basics","Status":"✅ PASS"},
+        {"Domain":"Clock & Frequency","Status":status_color(data["tCK"],0.625)},
+        {"Domain":"Addressing & Architecture","Status":"✅ PASS"},
+        {"Domain":"Power & Voltages","Status":status_color(data["VDD"],1.2)},
+        {"Domain":"AC Timing","Status":status_color(data["tAA"],13.75)},
+        {"Domain":"Training","Status":"✅ PASS" if data["TrainingPass"] else "❌ FAIL"},
+        {"Domain":"Refresh/Thermal","Status":"✅ PASS" if bandwidth_loss<=5 else "⚠️ MARGINAL" if bandwidth_loss<=6 else "❌ FAIL"},
+        {"Domain":"Signal Integrity","Status":status_color(data["SignalMargin"],0.16)}
     ])
     st.table(df_summary)
-
+    st.subheader("Reviewer Insights / Notes")
     st.markdown("""
-**Reviewer Insights / Notes (Q&A):**  
-- This part should **not be deployed without mitigations**.  
-- Recommended mitigations:  
-  - PCB trace matching and impedance control  
-  - Low-jitter clock buffers  
-  - Reduce speed bin / increase CAS latency  
-  - Thermal management and airflow  
-  - Re-run training under stress conditions  
-  - Refresh & AC timing adjustment
+- Golden parts pass all domains.
+- Marginal parts show timing/thermal stress → monitor AC timing and refresh tax.
+- Failure parts show clock, AC, SI, or thermal violations → mitigate with layout, cooling, CAS latency adjustment, and retest.
+- Always validate with training logs and system-level stress tests.
+- Final integration requires checking all boards and environmental conditions.
 """)
