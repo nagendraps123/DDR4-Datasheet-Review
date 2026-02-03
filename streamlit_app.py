@@ -49,7 +49,10 @@ This tool performs a **JEDEC-aligned technical review** of DDR4 SDRAM devices by
 - Derived/reference values are clearly labeled, never claimed as vendor guarantees.
 - Final silicon qualification remains the integrator's responsibility.
 """)
-
+# --- Privacy & Security Warning ---
+st.warning("⚠️ **Confidentiality Notice:** This tool is currently hosted on a public server. "
+           "Please **do not upload proprietary or confidential datasheets**. "
+           "Only use publicly available documents for this review.")
 # --- 4. File Upload ---
 uploaded_file = st.file_uploader("Upload Vendor DDR4 Datasheet (PDF)", type="pdf")
 
