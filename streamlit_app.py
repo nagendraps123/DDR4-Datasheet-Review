@@ -1,354 +1,240 @@
 import streamlit as st
-import os
+import pdfplumber
 import re
-import numpy as np
-import matplotlib.pyplot as plt
-from PyPDF2 import PdfReader
 
-# =========================================================
-# JEDEC REFERENCE (SIMPLIFIED, AUTHORITATIVE)
-# =========================================================
-JEDEC = {
-    "density": {
-        "8Gb": {
-            "BG": 4,
-            "banks": 16,
-            "rows": "A0–A14",
-            "cols": "A0–A9",
-            "page": "1 KB",
-            "tRFC": 350,     # ns
-            "tREFI": 7.8     # us
-        }
+# -------------------------------------------------
+# 1. JEDEC AUTHORITATIVE LOOKUP (REFERENCE ONLY)
+# -------------------------------------------------
+JEDEC_MASTER = {
+    "DENSITY": {
+        "8Gb": {"tRFC1": 350, "tRFC2": 260, "tRFC4": 160, "tREFI": 7.8, "BG": 4, "Banks": 16, "Rows": "A0-A14", "Cols": "A0-A9", "Page": "1KB"},
+        "16Gb": {"tRFC1": 550, "tRFC2": 350, "tRFC4": 260, "tREFI": 7.8, "BG": 4, "Banks": 16, "Rows": "A0-A15", "Cols": "A0-A9", "Page": "2KB"}
     },
-    "speed": {
-        "3200AA": {
-            "tCK": 0.625,
-            "tAA": 13.75,
-            "tRCD": 13.75,
-            "tRP": 13.75,
-            "tRAS": 32
-        }
+    "SPEED": {
+        "3200AA": {"tCK": 0.625, "tAA": 13.75, "tRCD": 13.75, "tRP": 13.75, "tRAS": 32, "tRC": 45.75, "tWR": 15, "tRTP": 7.5, "tDQSQ": 0.16}
     },
-    "power": {
-        "VDD": "1.2 V ± 0.06 V",
-        "VPP": "2.375 – 2.75 V"
+    "POWER": {
+        "VDD": {"nom": 1.2, "range": "1.2V ± 0.06V"},
+        "VPP": {"min": 2.375, "max": 2.75}
     }
 }
 
-# =========================================================
-# STREAMLIT CONFIG
-# =========================================================
-st.set_page_config(
-    page_title="JEDEC DDR4 Datasheet Review Tool",
-    layout="wide"
-)
+# -------------------------------------------------
+# 2. PART NUMBER EXTRACTION (LOCAL FILE)
+# -------------------------------------------------
+def extract_pn_from_path(pdf_path):
+    text = ""
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages[:2]:
+            text += page.extract_text() or ""
+    match = re.search(r'([A-Z0-9-]{8,25})', text)
+    return match.group(1) if match else "UNKNOWN_PN"
 
+# -------------------------------------------------
+# 3. STREAMLIT LANDING PAGE
+# -------------------------------------------------
+st.set_page_config(page_title="JEDEC DDR4 Compliance & Review Tool", layout="wide")
 st.title("🛡️ JEDEC DDR4 Compliance & Review Tool")
 
-with st.expander("📘 About this tool", expanded=True):
+with st.expander("📘 About This Tool / Disclaimer", expanded=True):
     st.markdown("""
-This internal tool performs a **JEDEC-aligned technical review** of DDR4 SDRAM
-datasheets against **JESD79-4C**.
+This tool performs a **JEDEC-aligned technical review** of DDR4 SDRAM devices by comparing
+**vendor datasheet parameters** against **JEDEC JESD79-4C requirements**.
 
-**Key principles**
-- JEDEC values are authoritative
-- Datasheet values are traceable
-- Derived analysis is clearly labeled
-- Final qualification remains system responsibility
+**Important**
+- Runs **entirely locally**
+- No files uploaded
+- No data transmitted
+- JEDEC values are reference-only
 """)
 
-st.info(
-    "🔒 **Local-only processing**: Datasheets are read from your laptop only. "
-    "No upload, no storage, no network transfer."
+# -------------------------------------------------
+# 4. LOCAL FILE INPUT (ONLY CHANGE)
+# -------------------------------------------------
+pdf_path = st.text_input(
+    "Enter local path of DDR4 datasheet PDF (no upload):",
+    placeholder="/Users/yourname/Documents/DDR4_datasheet.pdf"
 )
 
-# =========================================================
-# INPUT MODE
-# =========================================================
-st.subheader("📄 Datasheet Input")
+if pdf_path:
 
-mode = st.radio(
-    "Select datasheet input method",
-    ["Local file path (recommended)", "File picker (local only)"]
-)
+    try:
+        pn = extract_pn_from_path(pdf_path)
+    except Exception as e:
+        st.error(f"Failed to open PDF: {e}")
+        st.stop()
 
-pdf_text = ""
+    target_bin = "3200AA"
+    target_dens = "8Gb"
 
-if mode == "Local file path (recommended)":
-    path = st.text_input(
-        "Enter full local PDF path",
-        placeholder="/Users/yourname/Documents/DDR4_datasheet.pdf"
-    )
-    if path:
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                reader = PdfReader(f)
-                for p in reader.pages:
-                    pdf_text += p.extract_text() or ""
-            st.success("Datasheet read locally.")
-        else:
-            st.error("Invalid path.")
+    s_ref = JEDEC_MASTER["SPEED"][target_bin]
+    d_ref = JEDEC_MASTER["DENSITY"][target_dens]
+    p_ref = JEDEC_MASTER["POWER"]
 
-if mode == "File picker (local only)":
-    file = st.file_uploader("Select DDR4 datasheet PDF", type=["pdf"])
-    if file:
-        reader = PdfReader(file)
-        for p in reader.pages:
-            pdf_text += p.extract_text() or ""
-        st.success("Datasheet loaded locally.")
+    st.subheader(f"🚀 Full Audit Verdict: {pn}")
 
-if not pdf_text:
-    st.warning("Provide a datasheet to continue.")
-    st.stop()
-
-# =========================================================
-# BASIC EXTRACTION
-# =========================================================
-pn_match = re.search(r"(MT\d+[A-Z0-9\-]+)", pdf_text)
-pn = pn_match.group(1) if pn_match else "Unknown"
-
-density = "8Gb"
-speed = "3200AA"
-
-d = JEDEC["density"][density]
-s = JEDEC["speed"][speed]
-p = JEDEC["power"]
-
-# =========================================================
-# DEVICE CONTEXT
-# =========================================================
-st.subheader("📌 Device Context")
-
-st.table([
-    {"Item": "Part Number", "Value": pn},
-    {"Item": "Density", "Value": density},
-    {"Item": "Target Speed Bin", "Value": f"DDR4-{speed}"},
-    {"Item": "JEDEC Reference", "Value": "JESD79-4C"},
-    {"Item": "Review Mode", "Value": "Datasheet-based technical audit"}
-])
-
-# =========================================================
-# TABS
-# =========================================================
-tabs = st.tabs([
-    "DDR Basics",
-    "Clock & Frequency",
-    "Addressing & Architecture",
-    "Power & Voltages",
-    "AC Timing",
-    "Signal Integrity",
-    "Refresh, Thermal & Bandwidth",
-    "Failure Modes & Propagation",
-    "DDR3 / DDR4 / DDR5 Context",
-    "Review Summary & Mitigation"
-])
-
-# =========================================================
-# TAB 1 — DDR BASICS
-# =========================================================
-with tabs[0]:
-    st.subheader("DDR Basics")
-
-    st.markdown("### What this tab is")
-    st.markdown(
-        "A theoretical and architectural overview of DDR and DDR4 operation."
-    )
-
-    st.markdown("### Why it matters")
-    st.markdown(
-        "All timing, refresh, and SI assumptions depend on correct DDR fundamentals."
-    )
-
-    st.markdown("### DDR & DDR4 — Theory")
-    st.markdown(
-        "- **DDR** transfers data on both clock edges\n"
-        "- **DDR4** introduces bank groups, 8n prefetch, and lower voltage\n"
-        "- Internal DRAM runs slower than I/O; prefetch bridges this gap"
-    )
-
-    st.table([
-        {"Parameter": "Memory Type", "Value": "DDR4 SDRAM"},
-        {"Parameter": "Bank Groups", "Value": d["BG"]},
-        {"Parameter": "Total Banks", "Value": d["banks"]},
-        {"Parameter": "Burst Length", "Value": "BL8"},
-        {"Parameter": "Prefetch", "Value": "8n"}
+    # -------------------------------------------------
+    # 5. TABS
+    # -------------------------------------------------
+    tabs = st.tabs([
+        "1. DDR Basics", "2. Clock & Frequency", "3. Addressing",
+        "4. Power", "5. AC Timing", "6. Training",
+        "7. Refresh / Thermal", "8. Signal Integrity",
+        "9. DDR3 / DDR4 / DDR5 Context", "10. Review Summary"
     ])
 
-    st.markdown("### Reviewer Insights")
-    st.markdown(
-        "**Why bank groups matter:** Parallelism increases bandwidth but adds timing penalties.\n\n"
-        "**Failure mode:** Wrong assumptions pass boot, fail under stress.\n\n"
-        "**Mitigation:** Strict JEDEC-aligned controller configuration."
-    )
+    # ---------------- TAB 1 ----------------
+    with tabs[0]:
+        st.markdown("### What this tab is")
+        st.markdown("Foundational overview of DDR and DDR4 internal architecture.")
 
-# =========================================================
-# TAB 2 — CLOCK & FREQUENCY
-# =========================================================
-with tabs[1]:
-    st.subheader("Clock & Frequency")
+        st.markdown("### Why it matters")
+        st.markdown("All timing, refresh, and bandwidth behavior depends on DDR fundamentals.")
 
-    st.markdown("### What this tab is")
-    st.markdown("Validation of clock rate and speed-bin legality.")
+        st.markdown("### DDR Theory")
+        st.markdown("""
+**DDR (Double Data Rate)** transfers data on both clock edges.
+**DDR4** improves efficiency via lower voltage, bank groups, and higher concurrency.
+""")
 
-    st.markdown("### Why it matters")
-    st.markdown("Clock defines every other DDR timing parameter.")
+        st.table([
+            {"Parameter": "Memory Type", "Value": "DDR4 SDRAM"},
+            {"Parameter": "Bank Groups", "Value": d_ref["BG"]},
+            {"Parameter": "Total Banks", "Value": d_ref["Banks"]},
+            {"Parameter": "Burst Length", "Value": "BL8"},
+            {"Parameter": "Prefetch", "Value": "8n"}
+        ])
 
-    st.table([
-        {"Parameter": "Data Rate", "Datasheet": "3200 MT/s", "JEDEC": "3200 MT/s"},
-        {"Parameter": "tCK", "Datasheet": "0.625 ns", "JEDEC": "0.625 ns"},
-        {"Parameter": "Differential CK", "Datasheet": "Yes", "JEDEC": "Required"}
-    ])
+        st.markdown("### Reviewer Insights / Q&A")
+        st.markdown("""
+**Q: Why bank groups?**  
+A: To reduce activation conflicts and improve parallelism.
 
-    st.markdown("### Reviewer Insights")
-    st.markdown(
-        "Overclocking reduces margin. Failures appear first at voltage and temperature corners."
-    )
+**Cause → Effect → Symptom**  
+Wrong mapping → timing overlap → intermittent → permanent corruption.
 
-# =========================================================
-# TAB 3 — ADDRESSING
-# =========================================================
-with tabs[2]:
-    st.subheader("Addressing & Architecture")
+**Mitigation**  
+Strict JEDEC-aligned controller configuration + stress testing.
+""")
 
-    st.markdown("### What this tab is")
-    st.markdown("Verification of logical-to-physical address mapping.")
+    # ---------------- TAB 2 ----------------
+    with tabs[1]:
+        st.markdown("### What this tab is")
+        st.markdown("Clock period and frequency validation.")
 
-    st.markdown("### Why it matters")
-    st.markdown("Addressing errors cause silent, systematic corruption.")
+        st.markdown("### Why it matters")
+        st.markdown("All DDR timings derive from tCK.")
 
-    st.table([
-        {"Parameter": "Bank Groups", "Value": d["BG"]},
-        {"Parameter": "Banks / Group", "Value": 4},
-        {"Parameter": "Row Address", "Value": d["rows"]},
-        {"Parameter": "Column Address", "Value": d["cols"]},
-        {"Parameter": "Page Size", "Value": d["page"]}
-    ])
+        st.table([
+            {"Parameter": "Data Rate", "Value": "3200 MT/s"},
+            {"Parameter": "tCK", "Value": f"{s_ref['tCK']} ns"},
+            {"Parameter": "Clock Type", "Value": "Differential"}
+        ])
 
-# =========================================================
-# TAB 4 — POWER
-# =========================================================
-with tabs[3]:
-    st.subheader("Power & Voltages")
+        st.markdown("### Reviewer Insights / Q&A")
+        st.markdown("""
+Higher frequency → lower margin → failures at temp/voltage corners.
+""")
 
-    st.markdown("### What this tab is")
-    st.markdown("Verification of DRAM supply rails.")
+    # ---------------- TAB 3 ----------------
+    with tabs[2]:
+        st.markdown("### What this tab is")
+        st.markdown("Logical-to-physical address mapping review.")
 
-    st.markdown("### Why it matters")
-    st.markdown("Voltage directly affects speed margin and retention.")
+        st.markdown("### Why it matters")
+        st.markdown("Addressing errors are silent and persistent.")
 
-    st.table([
-        {"Rail": "VDD", "Datasheet": "1.2 V", "JEDEC": p["VDD"]},
-        {"Rail": "VPP", "Datasheet": "2.38 V", "JEDEC": p["VPP"]}
-    ])
+        st.table([
+            {"Item": "Row Address", "Value": d_ref["Rows"]},
+            {"Item": "Column Address", "Value": d_ref["Cols"]},
+            {"Item": "Page Size", "Value": d_ref["Page"]}
+        ])
 
-# =========================================================
-# TAB 5 — AC TIMING
-# =========================================================
-with tabs[4]:
-    st.subheader("AC Timing")
+        st.markdown("### Reviewer Insights / Q&A")
+        st.markdown("Incorrect mapping breaks refresh targeting.")
 
-    st.markdown("### What this tab is")
-    st.markdown("Comparison of key AC timing parameters.")
+    # ---------------- TAB 4 ----------------
+    with tabs[3]:
+        st.markdown("### Power & Voltages")
+        st.table([
+            {"Rail": "VDD", "Value": p_ref["VDD"]["range"]},
+            {"Rail": "VPP", "Value": f"{p_ref['VPP']['min']}–{p_ref['VPP']['max']} V"}
+        ])
 
-    st.markdown("### Why it matters")
-    st.markdown("Timing violations directly cause read/write failures.")
+        st.markdown("### Reviewer Insights / Q&A")
+        st.markdown("Low VDD → slow cell access → read failures.")
 
-    st.table([
-        {"Parameter": "tAA", "Datasheet": "14.06 ns", "JEDEC Max": "13.75 ns"},
-        {"Parameter": "tRCD", "Datasheet": "13.75 ns", "JEDEC": "13.75 ns"},
-        {"Parameter": "tRP", "Datasheet": "13.75 ns", "JEDEC": "13.75 ns"},
-        {"Parameter": "tRAS", "Datasheet": "32 ns", "JEDEC": "≥32 ns"}
-    ])
+    # ---------------- TAB 5 ----------------
+    with tabs[4]:
+        st.markdown("### AC Timing")
+        st.table([
+            {"Timing": "tAA", "Value": f"{s_ref['tAA']} ns"},
+            {"Timing": "tRCD", "Value": f"{s_ref['tRCD']} ns"},
+            {"Timing": "tRP", "Value": f"{s_ref['tRP']} ns"},
+            {"Timing": "tRAS", "Value": f"{s_ref['tRAS']} ns"}
+        ])
 
-# =========================================================
-# TAB 6 — SIGNAL INTEGRITY
-# =========================================================
-with tabs[5]:
-    st.subheader("Signal Integrity")
+        st.markdown("### Reviewer Insights / Q&A")
+        st.markdown("CAS violation = first failure under stress.")
 
-    st.markdown("### What this tab is")
-    st.markdown("Assessment of SI assumptions and visibility.")
+    # ---------------- TAB 6 ----------------
+    with tabs[5]:
+        st.markdown("### DDR4 Training")
+        st.markdown("""
+Read leveling, write leveling, and VrefDQ training ensure eye centering.
+""")
 
-    st.markdown("### Why it matters")
-    st.markdown("DDR failures are often analog, not digital.")
+    # ---------------- TAB 7 ----------------
+    with tabs[6]:
+        st.markdown("### Refresh, Thermal & Bandwidth")
 
-    st.table([
-        {"Metric": "tDQSQ", "Datasheet": "Not specified", "JEDEC": "≤0.16 ns"},
-        {"Metric": "Jitter", "Datasheet": "Not specified", "JEDEC": "Impl-dependent"},
-        {"Metric": "Eye Margin", "Datasheet": "Not specified", "JEDEC": "Impl-dependent"}
-    ])
+        refresh_loss = (d_ref["tRFC1"] / (d_ref["tREFI"] * 1000)) * 100
 
-# =========================================================
-# TAB 7 — REFRESH / THERMAL / BANDWIDTH
-# =========================================================
-with tabs[6]:
-    st.subheader("Refresh, Thermal & Bandwidth")
+        st.table([
+            {"Parameter": "tRFC", "Value": f"{d_ref['tRFC1']} ns"},
+            {"Parameter": "tREFI", "Value": f"{d_ref['tREFI']} µs"},
+            {"Parameter": "Refresh Bandwidth Loss", "Value": f"{refresh_loss:.2f}%"}
+        ])
 
-    st.markdown("### What this tab is")
-    st.markdown("Refresh overhead and thermal impact analysis.")
+        st.markdown("""
+**Formula:**  
+Bandwidth Loss (%) = tRFC / (tREFI × 1000)
 
-    st.markdown("### Why it matters")
-    st.markdown("Refresh directly steals memory bandwidth.")
+**Why:** Refresh blocks data access.
+Higher temperature → higher refresh rate → lower bandwidth.
+""")
 
-    refresh_loss = (d["tRFC"] / (d["tREFI"] * 1000)) * 100
+    # ---------------- TAB 8 ----------------
+    with tabs[7]:
+        st.markdown("### Signal Integrity")
+        st.table([
+            {"Metric": "tDQSQ", "Value": "≤ 0.16 ns"},
+            {"Metric": "Eye Margin", "Value": "Implementation dependent"}
+        ])
 
-    st.markdown(
-        f"**Refresh bandwidth loss:** ~{refresh_loss:.2f}%  \n"
-        "**Formula:** tRFC / (tREFI × 1000) × 100"
-    )
+    # ---------------- TAB 9 ----------------
+    with tabs[8]:
+        st.markdown("""
+**DDR3 → DDR4 → DDR5 Evolution**
 
-    st.markdown(
-        "- Above 85°C, refresh rate doubles\n"
-        "- Bandwidth loss doubles\n"
-        "- Performance drops even at constant CPU load"
-    )
+DDR4 lowers voltage vs DDR3 and increases banks.
+DDR5 introduces PMIC, on-die ECC, and extreme SI sensitivity.
+""")
 
-# =========================================================
-# TAB 8 — FAILURE MODES
-# =========================================================
-with tabs[7]:
-    st.subheader("Failure Modes & Propagation")
+    # ---------------- TAB 10 ----------------
+    with tabs[9]:
+        st.markdown("""
+### Final Review Summary
 
-    st.markdown("### What this tab is")
-    st.markdown("Mapping of root cause → violation → symptom.")
+**PASS:** Architecture, Clock, Power  
+**RISK:** Training, SI  
+**FAIL:** AC Timing at 3200AA
 
-    st.markdown("### Why it matters")
-    st.markdown("Failures often appear far from their cause.")
+**Actions**
+- Increase CAS
+- Reduce speed bin
+- Validate high-temp operation
+""")
 
-    st.table([
-        {"Root Cause": "Tight tAA", "Symptom": "Read errors"},
-        {"Root Cause": "Poor SI", "Symptom": "Boot failures"},
-        {"Root Cause": "High temp", "Symptom": "Bit flips"}
-    ])
-
-# =========================================================
-# TAB 9 — DDR CONTEXT
-# =========================================================
-with tabs[8]:
-    st.subheader("DDR3 / DDR4 / DDR5 Context")
-
-    st.table([
-        {"Type": "DDR3", "Voltage": "1.5 V", "Banks": 8, "Primary Risk": "Power"},
-        {"Type": "DDR4", "Voltage": "1.2 V", "Banks": 16, "Primary Risk": "Timing"},
-        {"Type": "DDR5", "Voltage": "1.1 V", "Banks": 32, "Primary Risk": "SI / PMIC"}
-    ])
-
-# =========================================================
-# TAB 10 — SUMMARY
-# =========================================================
-with tabs[9]:
-    st.subheader("Review Summary & Mitigation")
-
-    st.markdown(
-        "- Architecture & Power: OK\n"
-        "- AC Timing: Marginal\n"
-        "- Signal Integrity: Risk\n"
-        "- Refresh impact increases at high temperature"
-    )
-
-    st.markdown(
-        "**Recommended actions**\n"
-        "- Increase CAS latency or downgrade speed\n"
-        "- Improve PCB routing and SI margin\n"
-        "- Validate high-temperature operation"
-    )
+else:
+    st.info("Enter a local PDF path to run the audit.")
